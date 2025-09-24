@@ -39,6 +39,20 @@ export class OverrideController {
         )
       );
 
+      // Debug logging: Log final data being sent to frontend for diagnosis
+      logger.info('Sending container data to frontend', {
+        endpoint: '/api/overrides/containers', 
+        finalContainerResponses: containerResponses,
+        responseCount: containerResponses.length,
+        responseStructure: containerResponses.map(container => ({
+          id: container.id,
+          name: container.name,
+          totalAgents: container.totalAgents,
+          activeCount: container.activeCount,
+          agentsPreview: container.agents?.slice(0, 2) // Preview first 2 agents for structure
+        }))
+      });
+
       res.json({
         success: true,
         data: containerResponses,
