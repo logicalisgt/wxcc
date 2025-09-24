@@ -89,5 +89,6 @@ export interface UpdateAgentRequest {
 export interface WxccApiConfig {
   baseUrl: string;
   accessToken: string;
+  organizationId: string;
   timeout: number;
 }

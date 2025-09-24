@@ -17,10 +17,24 @@ export class WxccApiClient {
     });
 
     // Add request interceptor for logging
-    this.client.interceptors.request.use((config) => {
+    this.client.interceptors.request.use((requestConfig) => {
       const startTime = Date.now();
-      (config as any).metadata = { startTime };
-      return config;
+      (requestConfig as any).metadata = { startTime };
+      
+      // Enhanced logging: Log every WxCC API endpoint being called
+      const method = requestConfig.method?.toUpperCase() || 'GET';
+      const fullUrl = `${requestConfig.baseURL}${requestConfig.url}`;
+      
+      logger.info('WxCC API Call Starting', {
+        type: 'wxcc_api_call_start',
+        method,
+        url: requestConfig.url,
+        fullUrl,
+        operation: this.getOperationNameFromUrl(requestConfig.url || ''),
+        timestamp: new Date().toISOString()
+      });
+      
+      return requestConfig;
     });
 
     // Add response interceptor for logging
@@ -30,12 +44,23 @@ export class WxccApiClient {
         const startTime = (response.config as any).metadata?.startTime || endTime;
         const duration = endTime - startTime;
         
-        logApiCall(
-          response.config.method?.toUpperCase() || 'GET',
-          response.config.url || '',
+        const method = response.config.method?.toUpperCase() || 'GET';
+        const fullUrl = `${response.config.baseURL}${response.config.url}`;
+        
+        // Enhanced logging with full details
+        logger.info('WxCC API Call Completed', {
+          type: 'wxcc_api_call_success',
+          method,
+          url: response.config.url,
+          fullUrl,
           duration,
-          response.status
-        );
+          status: response.status,
+          operation: this.getOperationNameFromUrl(response.config.url || ''),
+          timestamp: new Date().toISOString()
+        });
+        
+        // Also maintain backward compatibility with existing logApiCall
+        logApiCall(method, fullUrl, duration, response.status);
         
         return response;
       },
@@ -44,12 +69,24 @@ export class WxccApiClient {
         const startTime = error.config?.metadata?.startTime || endTime;
         const duration = endTime - startTime;
         
-        logApiCall(
-          error.config?.method?.toUpperCase() || 'GET',
-          error.config?.url || '',
+        const method = error.config?.method?.toUpperCase() || 'GET';
+        const fullUrl = `${error.config?.baseURL || ''}${error.config?.url || ''}`;
+        
+        // Enhanced error logging
+        logger.error('WxCC API Call Failed', {
+          type: 'wxcc_api_call_error',
+          method,
+          url: error.config?.url,
+          fullUrl,
           duration,
-          error.response?.status
-        );
+          status: error.response?.status,
+          operation: this.getOperationNameFromUrl(error.config?.url || ''),
+          error: error.message,
+          timestamp: new Date().toISOString()
+        });
+        
+        // Also maintain backward compatibility
+        logApiCall(method, fullUrl, duration, error.response?.status);
         
         return Promise.reject(error);
       }
@@ -57,15 +94,29 @@ export class WxccApiClient {
   }
 
   /**
+   * Helper method to extract operation name from URL for logging
+   */
+  private getOperationNameFromUrl(url: string): string {
+    if (url.includes('/v2/overrides') && !url.includes('/overrides/')) return 'list_overrides';
+    if (url.includes('/overrides/') && url.split('/').length > 4) return 'get_override_by_id';
+    if (url.includes('/overrides/') && url.split('/').length === 4) return 'update_override_by_id';
+    return 'unknown_operation';
+  }
+
+  /**
    * Fetch all override containers using List API
+   * 
+   * Official WxCC API Documentation:
+   * Endpoint: GET https://api.wxcc-eu2.cisco.com/organization/{org-id}/v2/overrides
+   * Reference: WxCC Overrides API v2 - List Overrides resources
    */
   async listOverrideContainers(): Promise<WxccOverrideContainer[]> {
     try {
       logger.info('Fetching override containers', { operation: 'list_containers' });
       
-      const response: AxiosResponse<{ items: WxccOverrideContainer[] }> = await this.client.get(
-        '/telephony/config/override-containers'
-      );
+      // Use official WxCC API endpoint for List Overrides resources
+      const endpoint = `/organization/${config.wxcc.organizationId}/v2/overrides`;
+      const response: AxiosResponse<{ items: WxccOverrideContainer[] }> = await this.client.get(endpoint);
 
       const containers = response.data.items || [];
       logger.info('Successfully fetched containers', { 
@@ -83,6 +134,10 @@ export class WxccApiClient {
 
   /**
    * Get specific override container details by ID, including sub-overrides (agents)
+   * 
+   * Official WxCC API Documentation:
+   * Endpoint: GET https://api.wxcc-eu2.cisco.com/organization/{org-id}/overrides/{id}
+   * Reference: WxCC Overrides API - Get specific Overrides resource by ID
    */
   async getOverrideContainerById(containerId: string): Promise<WxccOverrideContainer> {
     try {
@@ -91,9 +146,9 @@ export class WxccApiClient {
         containerId 
       });
 
-      const response: AxiosResponse<WxccOverrideContainer> = await this.client.get(
-        `/telephony/config/override-containers/${containerId}`
-      );
+      // Use official WxCC API endpoint for Get specific Overrides resource by ID
+      const endpoint = `/organization/${config.wxcc.organizationId}/overrides/${containerId}`;
+      const response: AxiosResponse<WxccOverrideContainer> = await this.client.get(endpoint);
 
       const container = response.data;
       logger.info('Successfully fetched container details', {
@@ -112,6 +167,14 @@ export class WxccApiClient {
 
   /**
    * Update an override/agent within a container
+   * 
+   * Official WxCC API Documentation:
+   * Endpoint: PUT https://api.wxcc-eu2.cisco.com/organization/{org-id}/overrides/{id}
+   * Reference: WxCC Overrides API - Update specific Overrides resource by ID
+   * 
+   * TODO: Team review needed - The official API documentation shows updating by override ID,
+   * but our current implementation expects containerId and agentId. Need to clarify the
+   * correct mapping between our internal model and the official API structure.
    */
   async updateOverride(
     containerId: string, 
@@ -126,10 +189,10 @@ export class WxccApiClient {
         updateData: overrideData
       });
 
-      const response: AxiosResponse<WxccOverride> = await this.client.put(
-        `/telephony/config/override-containers/${containerId}/overrides/${agentId}`,
-        overrideData
-      );
+      // Use official WxCC API endpoint for Update specific Overrides resource by ID
+      // Note: Using containerId as the override ID - may need team review for correct mapping
+      const endpoint = `/organization/${config.wxcc.organizationId}/overrides/${containerId}`;
+      const response: AxiosResponse<WxccOverride> = await this.client.put(endpoint, overrideData);
 
       logger.info('Successfully updated agent override', {
         operation: 'update_override',
