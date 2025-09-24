@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { overrideService } from '../services/overrideService';
 import { UpdateAgentRequest } from '../types';
 import { logger } from '../utils/logger';
+import { mockContainers, mockActiveAgents } from '../utils/mockData';
+import { config } from '../config';
 
 export class OverrideController {
 
@@ -15,6 +17,18 @@ export class OverrideController {
         endpoint: '/api/overrides/containers',
         method: 'GET'
       });
+
+      // In development mode, use mock data if WxCC API is not available
+      if (config.nodeEnv === 'development' && !config.wxcc.accessToken) {
+        logger.info('Using mock data for development', { endpoint: '/api/overrides/containers' });
+        res.json({
+          success: true,
+          data: mockContainers,
+          count: mockContainers.length,
+          mock: true
+        });
+        return;
+      }
 
       const containers = await overrideService.getAllContainersWithAgents();
       
@@ -33,6 +47,23 @@ export class OverrideController {
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // In development mode, fall back to mock data on API error
+      if (config.nodeEnv === 'development') {
+        logger.warn('API failed, using mock data for development', {
+          endpoint: '/api/overrides/containers',
+          error: errorMessage
+        });
+        res.json({
+          success: true,
+          data: mockContainers,
+          count: mockContainers.length,
+          mock: true,
+          warning: 'Using mock data - WxCC API not available'
+        });
+        return;
+      }
+
       logger.error('Failed to get all containers', {
         endpoint: '/api/overrides/containers',
         error: errorMessage
@@ -118,6 +149,41 @@ export class OverrideController {
         return;
       }
 
+      // In development mode, use mock response if WxCC API is not available
+      if (config.nodeEnv === 'development' && !config.wxcc.accessToken) {
+        logger.info('Using mock response for development', { 
+          endpoint: `/api/overrides/containers/${containerId}/agents/${agentId}` 
+        });
+        
+        // Find the agent in mock data and simulate update
+        const container = mockContainers.find(c => c.id === containerId);
+        const agent = container?.agents.find(a => a.agentId === agentId);
+        
+        if (!agent) {
+          res.status(404).json({
+            success: false,
+            error: 'Agent not found',
+            message: `Agent ${agentId} not found in container ${containerId}`
+          });
+          return;
+        }
+
+        const updatedAgent = {
+          ...agent,
+          workingHours: updateData.workingHours,
+          startDateTime: updateData.startDateTime,
+          endDateTime: updateData.endDateTime
+        };
+
+        res.json({
+          success: true,
+          data: updatedAgent,
+          message: 'Agent schedule updated successfully (mock)',
+          mock: true
+        });
+        return;
+      }
+
       const updatedAgent = await overrideService.updateAgentSchedule(containerId, agentId, updateData);
 
       res.json({
@@ -128,6 +194,33 @@ export class OverrideController {
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // In development mode, provide mock response on API error
+      if (config.nodeEnv === 'development') {
+        logger.warn('API failed, using mock response for development', {
+          endpoint: `/api/overrides/containers/${req.params.containerId}/agents/${req.params.agentId}`,
+          error: errorMessage
+        });
+        
+        res.json({
+          success: true,
+          data: {
+            agentId: req.params.agentId,
+            containerId: req.params.containerId,
+            containerName: 'Mock Container',
+            workingHours: req.body.workingHours,
+            startDateTime: req.body.startDateTime,
+            endDateTime: req.body.endDateTime,
+            status: req.body.workingHours ? 'active' : 'inactive',
+            isCurrentlyActive: false
+          },
+          message: 'Agent schedule updated successfully (mock - API not available)',
+          mock: true,
+          warning: 'Using mock response - WxCC API not available'
+        });
+        return;
+      }
+
       logger.error('Failed to update agent schedule', {
         endpoint: `/api/overrides/containers/${req.params.containerId}/agents/${req.params.agentId}`,
         containerId: req.params.containerId,
@@ -168,6 +261,19 @@ export class OverrideController {
         method: 'GET'
       });
 
+      // In development mode, use mock data if WxCC API is not available
+      if (config.nodeEnv === 'development' && !config.wxcc.accessToken) {
+        logger.info('Using mock data for development', { endpoint: '/api/overrides/active' });
+        res.json({
+          success: true,
+          data: mockActiveAgents,
+          count: mockActiveAgents.length,
+          timestamp: new Date().toISOString(),
+          mock: true
+        });
+        return;
+      }
+
       const activeAgents = await overrideService.getActiveAgents();
 
       res.json({
@@ -179,6 +285,24 @@ export class OverrideController {
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // In development mode, fall back to mock data on API error
+      if (config.nodeEnv === 'development') {
+        logger.warn('API failed, using mock data for development', {
+          endpoint: '/api/overrides/active',
+          error: errorMessage
+        });
+        res.json({
+          success: true,
+          data: mockActiveAgents,
+          count: mockActiveAgents.length,
+          timestamp: new Date().toISOString(),
+          mock: true,
+          warning: 'Using mock data - WxCC API not available'
+        });
+        return;
+      }
+
       logger.error('Failed to get active agents', {
         endpoint: '/api/overrides/active',
         error: errorMessage

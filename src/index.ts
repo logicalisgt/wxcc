@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import path from 'path';
 import { config, validateConfig } from './config';
 import { logger } from './utils/logger';
 import { apiRoutes } from './routes';
@@ -34,11 +35,19 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Request logging middleware
 app.use(requestLogger);
 
+// Serve static frontend files
+app.use(express.static('public'));
+
 // API routes
 app.use('/api', apiRoutes);
 
-// Root endpoint
+// Root endpoint - serve the frontend
 app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+});
+
+// API status endpoint
+app.get('/status', (req, res) => {
   res.json({
     service: 'WxCC Overrides API',
     version: '1.0.0',
