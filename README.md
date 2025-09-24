@@ -113,7 +113,7 @@ npm run build
 
 Required environment variables:
 
-- `WXCC_API_BASE_URL`: WxCC API base URL (default: https://webexapis.com/v1)
+- `WXCC_API_BASE_URL`: WxCC API base URL (default: https://your-wxcc-instance.cisco.com/)
 - `WXCC_ACCESS_TOKEN`: WxCC API access token (required)
 - `PORT`: Server port (default: 3000)
 - `NODE_ENV`: Environment (development/production)

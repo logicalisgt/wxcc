@@ -6,7 +6,7 @@ export const config = {
   
   // WxCC API Configuration
   wxcc: {
-    baseUrl: process.env.WXCC_API_BASE_URL || 'https://webexapis.com/v1',
+    baseUrl: process.env.WXCC_API_BASE_URL || 'https://your-wxcc-instance.cisco.com/',
     accessToken: process.env.WXCC_ACCESS_TOKEN || '',
     timeout: parseInt(process.env.WXCC_API_TIMEOUT || '30000')
   } as WxccApiConfig,
