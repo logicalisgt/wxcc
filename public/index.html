@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WxCC Override Agent Scheduling</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <h1 class="title">
+                <i class="fas fa-headset"></i>
+                WxCC Override Agent Scheduling
+            </h1>
+            <div class="header-actions">
+                <button id="refreshBtn" class="btn btn-secondary">
+                    <i class="fas fa-sync-alt"></i>
+                    Refresh
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Search and Filters -->
+        <section class="controls-section">
+            <div class="search-container">
+                <div class="search-input-wrapper">
+                    <i class="fas fa-search search-icon"></i>
+                    <input type="text" id="agentSearch" placeholder="Search agents by name..." class="search-input">
+                    <button id="clearSearch" class="clear-search" style="display: none;">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="filters-container">
+                <select id="statusFilter" class="filter-select">
+                    <option value="all">All Statuses</option>
+                    <option value="active">Active Now</option>
+                    <option value="scheduled">Scheduled for Today</option>
+                    <option value="inactive">Inactive</option>
+                </select>
+                
+                <select id="containerFilter" class="filter-select">
+                    <option value="all">All Containers</option>
+                </select>
+            </div>
+        </section>
+
+        <!-- Loading State -->
+        <div id="loadingState" class="loading-container">
+            <div class="loading-spinner">
+                <i class="fas fa-spinner fa-spin"></i>
+            </div>
+            <p class="loading-text">Loading agent data...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="errorState" class="error-container" style="display: none;">
+            <div class="error-content">
+                <i class="fas fa-exclamation-triangle error-icon"></i>
+                <h3 class="error-title">Unable to Load Data</h3>
+                <p class="error-message" id="errorMessage">Please check your connection and try again.</p>
+                <button id="retryBtn" class="btn btn-primary">
+                    <i class="fas fa-redo"></i>
+                    Retry
+                </button>
+            </div>
+        </div>
+
+        <!-- Containers Content -->
+        <div id="containersContent" class="containers-content" style="display: none;">
+            <!-- Dynamic content will be inserted here -->
+        </div>
+    </main>
+
+    <!-- Schedule Modal -->
+    <div id="scheduleModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">
+                    <i class="fas fa-calendar-alt"></i>
+                    Schedule Agent
+                </h2>
+                <button id="closeModal" class="modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="agent-info">
+                    <h3 id="modalAgentName" class="agent-name"></h3>
+                    <p id="modalContainerName" class="container-name"></p>
+                </div>
+                
+                <form id="scheduleForm" class="schedule-form">
+                    <div class="form-group">
+                        <label for="workingHours" class="form-label">
+                            <i class="fas fa-toggle-on"></i>
+                            Working Hours Status
+                        </label>
+                        <div class="toggle-container">
+                            <input type="checkbox" id="workingHours" class="toggle-input">
+                            <label for="workingHours" class="toggle-label">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span id="workingHoursText" class="toggle-text">Inactive</span>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="startDateTime" class="form-label">
+                                <i class="fas fa-play-circle"></i>
+                                Start Date & Time
+                            </label>
+                            <input type="datetime-local" id="startDateTime" class="form-input">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="endDateTime" class="form-label">
+                                <i class="fas fa-stop-circle"></i>
+                                End Date & Time
+                            </label>
+                            <input type="datetime-local" id="endDateTime" class="form-input">
+                        </div>
+                    </div>
+                    
+                    <div class="validation-messages" id="validationMessages"></div>
+                    
+                    <div class="modal-actions">
+                        <button type="button" id="cancelBtn" class="btn btn-secondary">
+                            <i class="fas fa-times"></i>
+                            Cancel
+                        </button>
+                        <button type="submit" id="saveBtn" class="btn btn-primary">
+                            <i class="fas fa-save"></i>
+                            Save Schedule
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>

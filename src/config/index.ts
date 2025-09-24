@@ -27,6 +27,14 @@ export const config = {
 };
 
 export const validateConfig = (): void => {
+  // In development mode, allow missing WxCC credentials (will use mock data)
+  if (config.nodeEnv === 'development') {
+    if (!config.wxcc.accessToken) {
+      console.warn('Warning: WXCC_ACCESS_TOKEN not provided in development mode. Using mock data.');
+    }
+    return;
+  }
+  
   if (!config.wxcc.accessToken) {
     throw new Error('WXCC_ACCESS_TOKEN environment variable is required');
   }
