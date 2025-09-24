@@ -6,8 +6,9 @@ export const config = {
   
   // WxCC API Configuration
   wxcc: {
-    baseUrl: process.env.WXCC_API_BASE_URL || 'https://your-wxcc-instance.cisco.com/',
+    baseUrl: process.env.WXCC_API_BASE_URL || 'https://api.wxcc-eu2.cisco.com',
     accessToken: process.env.WXCC_ACCESS_TOKEN || '',
+    organizationId: process.env.WXCC_ORG_ID || '',
     timeout: parseInt(process.env.WXCC_API_TIMEOUT || '30000')
   } as WxccApiConfig,
 
@@ -32,11 +33,18 @@ export const validateConfig = (): void => {
     if (!config.wxcc.accessToken) {
       console.warn('Warning: WXCC_ACCESS_TOKEN not provided in development mode. Using mock data.');
     }
+    if (!config.wxcc.organizationId) {
+      console.warn('Warning: WXCC_ORG_ID not provided in development mode. Using mock data.');
+    }
     return;
   }
   
   if (!config.wxcc.accessToken) {
     throw new Error('WXCC_ACCESS_TOKEN environment variable is required');
+  }
+  
+  if (!config.wxcc.organizationId) {
+    throw new Error('WXCC_ORG_ID environment variable is required');
   }
   
   if (!config.wxcc.baseUrl) {
