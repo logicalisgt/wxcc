@@ -967,3 +967,191 @@ body {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
+
+/* Working Hours Toggle Styles */
+.working-hours-section {
+    margin: var(--spacing) 0;
+    padding: var(--spacing-sm);
+    background-color: var(--gray-50);
+    border-radius: var(--radius);
+    border: 1px solid var(--gray-200);
+}
+
+.working-hours-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.toggle-label {
+    font-weight: 500;
+    color: var(--gray-700);
+}
+
+.toggle-container {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    margin: 0 var(--spacing-sm);
+}
+
+.working-hours-checkbox {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--gray-300);
+    transition: 0.3s ease;
+    border-radius: 12px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: var(--white);
+    transition: 0.3s ease;
+    border-radius: 50%;
+    box-shadow: var(--shadow-sm);
+}
+
+.working-hours-checkbox:checked + .toggle-slider {
+    background-color: var(--status-active);
+}
+
+.working-hours-checkbox:checked + .toggle-slider:before {
+    transform: translateX(20px);
+}
+
+.working-hours-checkbox:disabled + .toggle-slider {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.toggle-status {
+    font-size: 0.85rem;
+    font-weight: 500;
+    min-width: 60px;
+    text-align: right;
+    transition: color 0.3s ease;
+}
+
+.toggle-status.active {
+    color: var(--status-active);
+}
+
+.toggle-status.inactive {
+    color: var(--status-inactive);
+}
+
+.toggle-status.updating {
+    color: var(--status-scheduled);
+}
+
+/* Unmapped Override Badge */
+.unmapped-badge {
+    display: inline-block;
+    background-color: var(--status-scheduled);
+    color: var(--white);
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 6px;
+    margin-left: var(--spacing-xs);
+    border-radius: var(--radius-sm);
+    vertical-align: top;
+}
+
+/* Mapping Modal Styles */
+.mapping-form {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.mapping-group {
+    margin-bottom: var(--spacing-md);
+    padding: var(--spacing);
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius);
+    background-color: var(--gray-50);
+}
+
+.mapping-group .form-label {
+    display: flex;
+    align-items: center;
+    margin-bottom: var(--spacing-sm);
+    font-weight: 600;
+    color: var(--gray-800);
+}
+
+.mapping-group .form-label i {
+    margin-right: var(--spacing-xs);
+    color: var(--primary-color);
+}
+
+.mapping-group .form-input {
+    width: 100%;
+    padding: var(--spacing-sm) var(--spacing);
+    border: 1px solid var(--gray-300);
+    border-radius: var(--radius);
+    font-size: 1rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.mapping-group .form-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+}
+
+.mapping-group .form-help {
+    display: block;
+    margin-top: var(--spacing-xs);
+    font-size: 0.85rem;
+    color: var(--gray-500);
+}
+
+.modal-subtitle {
+    color: var(--gray-600);
+    font-size: 0.95rem;
+    margin: 0;
+    font-weight: normal;
+}
+
+/* Enhanced Agent Card for Mapped Names */
+.agent-card .agent-name {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .working-hours-toggle {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--spacing-xs);
+    }
+    
+    .working-hours-section {
+        padding: var(--spacing-sm);
+    }
+    
+    .mapping-form {
+        max-height: 50vh;
+    }
+}

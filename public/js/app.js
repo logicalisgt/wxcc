@@ -7,6 +7,8 @@ class WxccAgentScheduler {
     constructor() {
         this.containers = [];
         this.filteredContainers = [];
+        this.mappings = [];
+        this.unmappedOverrides = [];
         this.currentAgent = null;
         this.searchTerm = '';
         this.statusFilter = 'all';
@@ -18,7 +20,7 @@ class WxccAgentScheduler {
 
     init() {
         this.bindEventListeners();
-        this.loadContainers();
+        this.loadData(); // Load both containers and mappings
     }
 
     bindEventListeners() {
@@ -37,10 +39,10 @@ class WxccAgentScheduler {
         containerFilter.addEventListener('change', (e) => this.handleContainerFilter(e.target.value));
 
         // Refresh button
-        document.getElementById('refreshBtn').addEventListener('click', () => this.loadContainers());
+        document.getElementById('refreshBtn').addEventListener('click', () => this.loadData());
 
         // Retry button
-        document.getElementById('retryBtn').addEventListener('click', () => this.loadContainers());
+        document.getElementById('retryBtn').addEventListener('click', () => this.loadData());
 
         // Modal handlers
         this.bindModalEventListeners();
@@ -77,31 +79,236 @@ class WxccAgentScheduler {
         endDateTime.addEventListener('change', () => this.validateForm());
     }
 
-    async loadContainers() {
+    async loadData() {
         try {
             this.showLoadingState();
             
-            const response = await fetch(`${this.apiBaseUrl}/overrides/containers`);
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            // Load both containers and mappings in parallel
+            const [containersResponse, mappingsResponse] = await Promise.all([
+                fetch(`${this.apiBaseUrl}/overrides/containers`),
+                fetch(`${this.apiBaseUrl}/overrides/mappings`)
+            ]);
+
+            if (!containersResponse.ok) {
+                throw new Error(`Container API HTTP ${containersResponse.status}: ${containersResponse.statusText}`);
+            }
+
+            if (!mappingsResponse.ok) {
+                throw new Error(`Mappings API HTTP ${mappingsResponse.status}: ${mappingsResponse.statusText}`);
             }
             
-            const data = await response.json();
+            const containersData = await containersResponse.json();
+            const mappingsData = await mappingsResponse.json();
             
-            if (data.success) {
-                this.containers = data.data;
-                this.updateContainerFilter();
-                this.applyFilters();
-                this.showContent();
-                this.showToast('success', 'Data loaded successfully', `Loaded ${this.containers.length} containers`);
-            } else {
-                throw new Error(data.message || 'Failed to load data');
+            if (!containersData.success) {
+                throw new Error(containersData.message || 'Failed to load containers');
             }
+
+            if (!mappingsData.success) {
+                throw new Error(mappingsData.message || 'Failed to load mappings');
+            }
+
+            this.containers = containersData.data;
+            this.mappings = mappingsData.data;
+            
+            // Detect unmapped overrides (where agentName is null)
+            this.unmappedOverrides = this.mappings.filter(mapping => !mapping.isMapped || mapping.agentName === null);
+            
+            console.log(`Loaded ${this.containers.length} containers, ${this.mappings.length} mappings`);
+            console.log(`Found ${this.unmappedOverrides.length} unmapped overrides:`, 
+                       this.unmappedOverrides.map(o => o.overrideName));
+
+            this.updateContainerFilter();
+            this.applyFilters();
+            this.showContent();
+            
+            // Prompt user for unmapped overrides if any exist
+            if (this.unmappedOverrides.length > 0) {
+                await this.handleUnmappedOverrides();
+            }
+            
+            this.showToast('success', 'Data loaded successfully', 
+                          `Loaded ${this.containers.length} containers, ${this.mappings.length} mappings`);
             
         } catch (error) {
-            console.error('Failed to load containers:', error);
+            console.error('Failed to load data:', error);
             this.showErrorState(error.message);
             this.showToast('error', 'Loading failed', error.message);
+        }
+    }
+
+    async loadContainers() {
+        // Keep the old method for backward compatibility, but just call loadData
+        return this.loadData();
+    }
+
+    async handleUnmappedOverrides() {
+        if (this.unmappedOverrides.length === 0) return;
+
+        // Show mapping modal for unmapped overrides
+        const mappingPromise = this.showMappingModal(this.unmappedOverrides);
+        const mappings = await mappingPromise;
+        
+        if (mappings && mappings.length > 0) {
+            // Create mappings via API
+            await this.createMappings(mappings);
+            // Refresh data to show updated mappings
+            await this.loadData();
+        }
+    }
+
+    async showMappingModal(unmappedOverrides) {
+        return new Promise((resolve) => {
+            // Create mapping modal dynamically
+            const modalHtml = `
+                <div id="mappingModal" class="modal-overlay show">
+                    <div class="modal-content" style="max-width: 600px;">
+                        <div class="modal-header">
+                            <h2 class="modal-title">
+                                <i class="fas fa-user-plus"></i>
+                                Map Agent Names
+                            </h2>
+                            <p class="modal-subtitle">
+                                ${unmappedOverrides.length} override${unmappedOverrides.length === 1 ? '' : 's'} need${unmappedOverrides.length === 1 ? 's' : ''} agent name${unmappedOverrides.length === 1 ? '' : 's'}
+                            </p>
+                        </div>
+                        
+                        <div class="modal-body">
+                            <form id="mappingForm" class="mapping-form">
+                                ${unmappedOverrides.map((override, index) => `
+                                    <div class="form-group mapping-group">
+                                        <label class="form-label">
+                                            <i class="fas fa-user"></i>
+                                            Override: "${this.escapeHtml(override.overrideName)}"
+                                        </label>
+                                        <input type="text" 
+                                               id="agentName${index}" 
+                                               class="form-input" 
+                                               placeholder="Enter agent name (e.g., John Smith)"
+                                               required
+                                               data-override-name="${this.escapeHtml(override.overrideName)}">
+                                        <small class="form-help">Container: ${this.escapeHtml(override.containerName || 'Unknown')}</small>
+                                    </div>
+                                `).join('')}
+                                
+                                <div class="modal-actions">
+                                    <button type="button" id="skipMappingBtn" class="btn btn-secondary">
+                                        <i class="fas fa-times"></i>
+                                        Skip for Now
+                                    </button>
+                                    <button type="submit" id="createMappingsBtn" class="btn btn-primary">
+                                        <i class="fas fa-save"></i>
+                                        Create Mappings
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Add modal to page
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            document.body.style.overflow = 'hidden';
+
+            const modal = document.getElementById('mappingModal');
+            const form = document.getElementById('mappingForm');
+            const skipBtn = document.getElementById('skipMappingBtn');
+
+            // Handle form submission
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                
+                const mappings = [];
+                unmappedOverrides.forEach((override, index) => {
+                    const agentNameInput = document.getElementById(`agentName${index}`);
+                    const agentName = agentNameInput.value.trim();
+                    
+                    if (agentName) {
+                        mappings.push({
+                            overrideName: override.overrideName,
+                            agentName: agentName
+                        });
+                    }
+                });
+
+                this.closeMappingModal();
+                resolve(mappings);
+            });
+
+            // Handle skip button
+            skipBtn.addEventListener('click', () => {
+                this.closeMappingModal();
+                resolve([]);
+            });
+
+            // Handle ESC key
+            const handleEsc = (e) => {
+                if (e.key === 'Escape') {
+                    this.closeMappingModal();
+                    resolve([]);
+                    document.removeEventListener('keydown', handleEsc);
+                }
+            };
+            document.addEventListener('keydown', handleEsc);
+
+            // Focus first input
+            setTimeout(() => {
+                const firstInput = document.getElementById('agentName0');
+                if (firstInput) firstInput.focus();
+            }, 300);
+        });
+    }
+
+    closeMappingModal() {
+        const modal = document.getElementById('mappingModal');
+        if (modal) {
+            modal.remove();
+            document.body.style.overflow = '';
+        }
+    }
+
+    async createMappings(mappings) {
+        const successCount = [];
+        const errors = [];
+
+        for (const mapping of mappings) {
+            try {
+                console.log(`Creating mapping: ${mapping.overrideName} -> ${mapping.agentName}`);
+                
+                const response = await fetch(`${this.apiBaseUrl}/overrides/map`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(mapping)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    successCount.push(mapping.overrideName);
+                    console.log(`Successfully mapped: ${mapping.overrideName}`);
+                } else {
+                    errors.push(`${mapping.overrideName}: ${result.message}`);
+                    console.error(`Failed to map ${mapping.overrideName}:`, result.message);
+                }
+
+            } catch (error) {
+                errors.push(`${mapping.overrideName}: ${error.message}`);
+                console.error(`Error mapping ${mapping.overrideName}:`, error);
+            }
+        }
+
+        // Show results
+        if (successCount.length > 0) {
+            this.showToast('success', 'Mappings Created', 
+                          `Successfully created ${successCount.length} mapping${successCount.length === 1 ? '' : 's'}`);
+        }
+
+        if (errors.length > 0) {
+            this.showToast('error', 'Some mappings failed', 
+                          `${errors.length} error${errors.length === 1 ? '' : 's'}: ${errors.slice(0, 2).join(', ')}${errors.length > 2 ? '...' : ''}`);
         }
     }
 
@@ -229,6 +436,104 @@ class WxccAgentScheduler {
                 this.openScheduleModal(containerId, agentId);
             });
         });
+
+        // Working hours toggles
+        document.querySelectorAll('.working-hours-checkbox').forEach(checkbox => {
+            checkbox.addEventListener('change', (e) => {
+                const agentId = e.currentTarget.dataset.agentId;
+                const containerId = e.currentTarget.dataset.containerId;
+                const isActive = e.currentTarget.checked;
+                
+                this.handleWorkingHoursToggle(agentId, containerId, isActive, e.currentTarget);
+            });
+        });
+    }
+
+    async handleWorkingHoursToggle(agentId, containerId, isActive, checkboxElement) {
+        const originalState = !isActive; // Opposite of current state
+        
+        try {
+            // Log the toggle attempt
+            console.log(`Working hours toggle: ${agentId} -> ${isActive ? 'Active' : 'Inactive'}`);
+            
+            // Find the toggle status element to update
+            const agentCard = checkboxElement.closest('.agent-card');
+            const statusElement = agentCard.querySelector('.toggle-status');
+            
+            // Temporarily disable checkbox and show loading state
+            checkboxElement.disabled = true;
+            if (statusElement) {
+                statusElement.textContent = 'Updating...';
+                statusElement.className = 'toggle-status updating';
+            }
+
+            // Call backend API
+            const response = await fetch(`${this.apiBaseUrl}/overrides/working-hours`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    overrideName: agentId,
+                    workingHoursActive: isActive
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // Update UI with success state
+                if (statusElement) {
+                    statusElement.textContent = isActive ? 'Active' : 'Inactive';
+                    statusElement.className = `toggle-status ${isActive ? 'active' : 'inactive'}`;
+                }
+                
+                // Log success
+                console.log(`Working hours toggle successful: ${agentId} -> ${isActive ? 'Active' : 'Inactive'}`);
+                
+                // Show success toast
+                this.showToast('success', 'Working Hours Updated', 
+                              `Working hours ${isActive ? 'activated' : 'deactivated'} for ${agentId}`);
+                
+                // Update local data to reflect the change
+                const container = this.containers.find(c => c.id === containerId);
+                if (container) {
+                    const agent = container.agents.find(a => a.agentId === agentId);
+                    if (agent) {
+                        agent.workingHours = isActive;
+                    }
+                }
+                
+            } else {
+                throw new Error(result.message || 'Failed to update working hours');
+            }
+            
+        } catch (error) {
+            console.error(`Working hours toggle failed: ${agentId}`, error);
+            
+            // Revert checkbox state
+            checkboxElement.checked = originalState;
+            
+            // Update status element
+            const agentCard = checkboxElement.closest('.agent-card');
+            const statusElement = agentCard.querySelector('.toggle-status');
+            if (statusElement) {
+                statusElement.textContent = originalState ? 'Active' : 'Inactive';
+                statusElement.className = `toggle-status ${originalState ? 'active' : 'inactive'}`;
+            }
+            
+            // Show error toast with validation details if available
+            let errorMessage = error.message;
+            if (error.message.includes('Schedule conflict') || error.message.includes('Validation failed')) {
+                errorMessage = `Schedule conflict: ${error.message}`;
+            }
+            
+            this.showToast('error', 'Working Hours Update Failed', errorMessage, 8000);
+            
+        } finally {
+            // Re-enable checkbox
+            checkboxElement.disabled = false;
+        }
     }
 
     getNoDataTemplate() {
@@ -309,13 +614,19 @@ class WxccAgentScheduler {
         const statusIcon = this.getStatusIcon(agent.status);
         const isActive = agent.isCurrentlyActive;
         
+        // Find mapped agent name from mappings
+        const mapping = this.mappings.find(m => m.overrideName === agent.agentId);
+        const displayName = mapping && mapping.agentName ? mapping.agentName : agent.agentId;
+        const isMapped = mapping && mapping.isMapped;
+        
         return `
             <div class="agent-card ${isActive ? 'agent-active' : ''}" data-agent-id="${agent.agentId}">
                 <div class="agent-header">
                     <div>
                         <h3 class="agent-name">
                             ${isActive ? '<i class="fas fa-star spotlight-icon"></i>' : ''}
-                            ${this.escapeHtml(agent.agentId)}
+                            ${this.escapeHtml(displayName)}
+                            ${!isMapped ? '<span class="unmapped-badge" title="Override ID - not mapped to agent name">ID</span>' : ''}
                         </h3>
                         <div class="agent-status status-${agent.status} tooltip" data-tooltip="${this.getStatusTooltip(agent.status)}">
                             <i class="fas ${statusIcon} status-icon"></i>
@@ -327,7 +638,23 @@ class WxccAgentScheduler {
                 <div class="agent-schedule">
                     <div><strong>Schedule:</strong></div>
                     <div>${this.formatDateTime(agent.startDateTime)} - ${this.formatDateTime(agent.endDateTime)}</div>
-                    <div><small>Working Hours: ${agent.workingHours ? 'Yes' : 'No'}</small></div>
+                </div>
+                
+                <div class="working-hours-section">
+                    <label class="working-hours-toggle">
+                        <span class="toggle-label">Working Hours:</span>
+                        <div class="toggle-container">
+                            <input type="checkbox" 
+                                   class="working-hours-checkbox" 
+                                   ${agent.workingHours ? 'checked' : ''} 
+                                   data-agent-id="${agent.agentId}" 
+                                   data-container-id="${agent.containerId}">
+                            <span class="toggle-slider"></span>
+                        </div>
+                        <span class="toggle-status ${agent.workingHours ? 'active' : 'inactive'}">
+                            ${agent.workingHours ? 'Active' : 'Inactive'}
+                        </span>
+                    </label>
                 </div>
                 
                 <div class="agent-actions">
@@ -639,7 +966,7 @@ document.addEventListener('keydown', (e) => {
     // F5 or Ctrl/Cmd + R to refresh (override default to use our refresh)
     if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key === 'r')) {
         e.preventDefault();
-        window.app.loadContainers();
+        window.app.loadData();
     }
 });
 
