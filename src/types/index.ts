@@ -29,8 +29,11 @@ export enum AgentStatus {
 // WxCC API response types
 export interface WxccOverrideContainer {
   id: string;
+  organizationId: string;
+  version?: number;
   name: string;
   description?: string;
+  timezone?: string;
   createdTime: string;
   lastModifiedTime: string;
   overrides?: WxccOverride[];

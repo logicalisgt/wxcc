@@ -153,6 +153,181 @@ Toggle working hours for a mapped override with schedule conflict validation.
 
 ## Business Logic
 
+### WxCC API Multi-Step Workflow
+
+This application strictly follows the WxCC API contract using a documented multi-step workflow:
+
+#### Step 1: List Override Containers
+- **Endpoint**: `GET /organization/{orgid}/v2/overrides`
+- **Purpose**: Get basic information about all override containers
+- **Sample Request**:
+```bash
+GET https://api.wxcc-eu2.cisco.com/organization/my-org-id/v2/overrides
+Authorization: Bearer {access_token}
+Content-Type: application/json
+```
+- **Sample Response**:
+```json
+{
+  "data": [
+    {
+      "id": "container-123",
+      "name": "Sales Team Override",
+      "description": "Override container for sales team",
+      "createdTime": "2024-01-01T00:00:00Z",
+      "lastModifiedTime": "2024-01-01T12:00:00Z"
+    }
+  ]
+}
+```
+
+#### Step 2: Get Full Container Details
+- **Endpoint**: `GET /organization/{orgid}/overrides/{id}`
+- **Purpose**: Fetch complete container including all overrides (agents)
+- **Sample Request**:
+```bash
+GET https://api.wxcc-eu2.cisco.com/organization/my-org-id/overrides/container-123
+Authorization: Bearer {access_token}
+Content-Type: application/json
+```
+- **Sample Response**:
+```json
+{
+  "id": "container-123",
+  "organizationId": "my-org-id",
+  "version": 1,
+  "name": "Sales Team Override",
+  "description": "Override container for sales team",
+  "timezone": "UTC",
+  "createdTime": "2024-01-01T00:00:00Z",
+  "lastModifiedTime": "2024-01-01T12:00:00Z",
+  "overrides": [
+    {
+      "name": "Day for me",
+      "workingHours": true,
+      "startDateTime": "2024-01-01T08:00:00Z",
+      "endDateTime": "2024-01-01T17:00:00Z"
+    },
+    {
+      "name": "Fire Drill",
+      "workingHours": false,
+      "startDateTime": "2024-01-01T09:00:00Z",
+      "endDateTime": "2024-01-01T18:00:00Z"
+    }
+  ]
+}
+```
+
+#### Step 3: Update Override Schedule (Multi-Step Process)
+When updating an override schedule, the application:
+
+1. **Fetches the full container** (Step 2 above)
+2. **Finds the specific override** by matching `agentId` to `override.name`
+3. **Updates only the target override** while preserving all other overrides
+4. **Constructs complete container object** with all required fields
+5. **Sends the complete container** as PUT request body
+
+- **Endpoint**: `PUT /organization/{orgid}/overrides/{id}`
+- **Purpose**: Update specific override within container
+- **Sample Request**:
+```bash
+PUT https://api.wxcc-eu2.cisco.com/organization/my-org-id/overrides/container-123
+Authorization: Bearer {access_token}
+Content-Type: application/json
+
+{
+  "id": "container-123",
+  "organizationId": "my-org-id",
+  "version": 1,
+  "name": "Sales Team Override",
+  "description": "Override container for sales team",
+  "timezone": "UTC",
+  "createdTime": "2024-01-01T00:00:00Z",
+  "lastModifiedTime": "2024-01-01T15:30:00Z",
+  "overrides": [
+    {
+      "name": "Day for me",
+      "workingHours": true,
+      "startDateTime": "2024-01-01T09:00:00Z",
+      "endDateTime": "2024-01-01T18:00:00Z"
+    },
+    {
+      "name": "Fire Drill",
+      "workingHours": false,
+      "startDateTime": "2024-01-01T09:00:00Z",
+      "endDateTime": "2024-01-01T18:00:00Z"
+    }
+  ]
+}
+```
+- **Sample Response**:
+```json
+{
+  "id": "container-123",
+  "organizationId": "my-org-id",
+  "version": 2,
+  "name": "Sales Team Override",
+  "description": "Override container for sales team",
+  "timezone": "UTC",
+  "createdTime": "2024-01-01T00:00:00Z",
+  "lastModifiedTime": "2024-01-01T15:30:00Z",
+  "overrides": [
+    {
+      "name": "Day for me",
+      "workingHours": true,
+      "startDateTime": "2024-01-01T09:00:00Z",
+      "endDateTime": "2024-01-01T18:00:00Z"
+    },
+    {
+      "name": "Fire Drill",
+      "workingHours": false,
+      "startDateTime": "2024-01-01T09:00:00Z",
+      "endDateTime": "2024-01-01T18:00:00Z"
+    }
+  ]
+}
+```
+
+### Enhanced API Logging
+
+All WxCC API calls include detailed logging for complete traceability:
+
+- **Before API Call**: Operation type, full URL, complete request body
+- **After API Call**: Full response status, complete response body, execution time
+- **Error Cases**: HTTP status, WxCC error message, error code, request/response details
+
+**Sample Log Entry (Success)**:
+```json
+{
+  "timestamp": "2024-01-01T15:30:00.000Z",
+  "level": "info",
+  "message": "WxCC API Call Starting",
+  "type": "wxcc_api_call_start",
+  "method": "PUT",
+  "url": "/organization/my-org-id/overrides/container-123",
+  "fullUrl": "https://api.wxcc-eu2.cisco.com/organization/my-org-id/overrides/container-123",
+  "operation": "update_override_by_id",
+  "requestBody": { /* complete container object */ }
+}
+```
+
+**Sample Log Entry (Error)**:
+```json
+{
+  "timestamp": "2024-01-01T15:30:00.000Z",
+  "level": "error",
+  "message": "WxCC API Call Failed",
+  "type": "wxcc_api_call_error",
+  "method": "PUT",
+  "url": "/organization/my-org-id/overrides/container-123",
+  "status": 400,
+  "wxccErrorMessage": "Invalid override data",
+  "wxccErrorCode": "VALIDATION_ERROR",
+  "requestBody": { /* request that failed */ },
+  "responseBody": { /* WxCC error response */ }
+}
+```
+
 ### Override Container Processing
 1. Fetches all containers using WxCC List API
 2. For each container, fetches detailed info using Get-by-ID API to obtain sub-overrides (agents)
@@ -168,6 +343,13 @@ Toggle working hours for a mapped override with schedule conflict validation.
 - `SCHEDULED`: workingHours = true, current time < startDateTime  
 - `ACTIVE`: workingHours = true, current time within [startDateTime, endDateTime]
 - `EXPIRED`: workingHours = true, current time > endDateTime
+
+### Agent/Override Mapping
+
+**Critical**: The system correctly uses the WxCC override `name` field for all agent/override mapping operations:
+- `agentId` in our internal model maps to `override.name` in WxCC API
+- All lookups and updates use the override name, not container name or ID
+- Mapping service validates override names against WxCC data using the `name` field
 
 ### Persistent Agent Mapping System
 The system includes a SQLite-based mapping layer that associates WxCC override names (e.g., "Day for me", "Fire Drill") with human-friendly agent names:

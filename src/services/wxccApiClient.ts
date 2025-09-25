@@ -31,6 +31,7 @@ export class WxccApiClient {
         url: requestConfig.url,
         fullUrl,
         operation: this.getOperationNameFromUrl(requestConfig.url || ''),
+        requestBody: requestConfig.data,
         timestamp: new Date().toISOString()
       });
       
@@ -56,6 +57,7 @@ export class WxccApiClient {
           duration,
           status: response.status,
           operation: this.getOperationNameFromUrl(response.config.url || ''),
+          responseBody: response.data,
           timestamp: new Date().toISOString()
         });
         
@@ -82,6 +84,9 @@ export class WxccApiClient {
           status: error.response?.status,
           operation: this.getOperationNameFromUrl(error.config?.url || ''),
           error: error.message,
+          requestBody: error.config?.data,
+          responseBody: error.response?.data,
+          responseHeaders: error.response?.headers,
           timestamp: new Date().toISOString()
         });
         
@@ -183,9 +188,11 @@ export class WxccApiClient {
    * Endpoint: PUT https://api.wxcc-eu2.cisco.com/organization/{org-id}/overrides/{id}
    * Reference: WxCC Overrides API - Update specific Overrides resource by ID
    * 
-   * TODO: Team review needed - The official API documentation shows updating by override ID,
-   * but our current implementation expects containerId and agentId. Need to clarify the
-   * correct mapping between our internal model and the official API structure.
+   * Multi-step workflow as per WxCC API contract:
+   * 1. Fetch the full container details including all overrides
+   * 2. Construct the complete override container object with all required fields
+   * 3. Update only the relevant override inside the overrides array
+   * 4. Send the complete container object as PUT request body
    */
   async updateOverride(
     containerId: string, 
@@ -193,25 +200,80 @@ export class WxccApiClient {
     overrideData: Partial<WxccOverride>
   ): Promise<WxccOverride> {
     try {
-      logger.info('Updating agent override', {
+      logger.info('Starting override update workflow', {
         operation: 'update_override',
         containerId,
         agentId,
         updateData: overrideData
       });
 
-      // Use official WxCC API endpoint for Update specific Overrides resource by ID
-      // Note: Using containerId as the override ID - may need team review for correct mapping
+      // Step 1: Fetch the full container details including all overrides
+      logger.info('Fetching full container details for update', {
+        operation: 'update_override_step1',
+        containerId
+      });
+      
+      const fullContainer = await this.getOverrideContainerById(containerId);
+      
+      if (!fullContainer.overrides) {
+        fullContainer.overrides = [];
+      }
+
+      // Step 2: Find the specific override to update by name (agentId maps to override.name)
+      const overrideIndex = fullContainer.overrides.findIndex(override => override.name === agentId);
+      
+      if (overrideIndex === -1) {
+        throw new Error(`Override with name '${agentId}' not found in container ${containerId}`);
+      }
+
+      // Step 3: Update only the relevant override, preserving all other overrides
+      const updatedOverride: WxccOverride = {
+        ...fullContainer.overrides[overrideIndex],
+        ...overrideData
+      };
+      
+      fullContainer.overrides[overrideIndex] = updatedOverride;
+
+      // Step 4: Construct the complete override container object with all required fields
+      const completeContainerPayload: WxccOverrideContainer = {
+        id: fullContainer.id,
+        organizationId: config.wxcc.organizationId,
+        version: fullContainer.version || 1,
+        name: fullContainer.name,
+        description: fullContainer.description,
+        timezone: fullContainer.timezone || 'UTC',
+        createdTime: fullContainer.createdTime,
+        lastModifiedTime: new Date().toISOString(),
+        overrides: fullContainer.overrides
+      };
+
+      logger.info('Sending complete container update to WxCC API', {
+        operation: 'update_override_step4',
+        containerId,
+        agentId,
+        overrideCount: completeContainerPayload.overrides?.length || 0,
+        payloadSize: JSON.stringify(completeContainerPayload).length
+      });
+
+      // Step 5: Send the complete container object as PUT request
       const endpoint = `/organization/${config.wxcc.organizationId}/overrides/${containerId}`;
-      const response: AxiosResponse<WxccOverride> = await this.client.put(endpoint, overrideData);
+      const response: AxiosResponse<WxccOverrideContainer> = await this.client.put(endpoint, completeContainerPayload);
+
+      // Extract the updated override from the response
+      const responseOverride = response.data.overrides?.find(override => override.name === agentId);
+      
+      if (!responseOverride) {
+        throw new Error(`Updated override '${agentId}' not found in response`);
+      }
 
       logger.info('Successfully updated agent override', {
         operation: 'update_override',
         containerId,
-        agentId
+        agentId,
+        updatedFields: Object.keys(overrideData)
       });
 
-      return response.data;
+      return responseOverride;
     } catch (error) {
       logWxccApiError('update_override', error, { containerId, agentId, overrideData });
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
