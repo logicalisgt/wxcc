@@ -159,25 +159,93 @@ export class MappingService {
    * Toggle working hours for a mapped override with overlap validation
    */
   async updateWorkingHours(request: WorkingHoursToggleRequest): Promise<OverrideMappingResponse> {
+    let beforeState: boolean | null = null;
+    let operationContext: any = {};
+    let validationErrors: string[] = [];
+    
     try {
-      logger.info('Updating working hours status', { 
+      // Initial logging - operation start
+      logger.info('Starting working hours toggle operation', { 
+        operation: 'update_working_hours',
         overrideName: request.overrideName,
-        workingHoursActive: request.workingHoursActive 
+        requestedState: request.workingHoursActive,
+        timestamp: new Date().toISOString()
       });
 
-      // Check if mapping exists
+      // Check if mapping exists and get current state
       const existingMapping = await databaseService.getMapping(request.overrideName);
       if (!existingMapping) {
-        throw new Error(`No mapping found for override name: ${request.overrideName}`);
+        const error = `No mapping found for override name: ${request.overrideName}`;
+        logger.error('Working hours toggle failed - mapping not found', { 
+          overrideName: request.overrideName,
+          error,
+          operation: 'update_working_hours'
+        });
+        
+        prettyLogger.error('Mapping not found for working hours toggle', {
+          operation: 'updateWorkingHours',
+          overrideName: request.overrideName,
+          error
+        });
+        
+        throw new Error(error);
       }
+
+      // Capture before state for logging
+      beforeState = existingMapping.workingHoursActive;
+      
+      // Build operation context
+      operationContext = {
+        overrideName: request.overrideName,
+        agentName: existingMapping.agentName,
+        beforeState,
+        requestedState: request.workingHoursActive,
+        mappingId: existingMapping.id,
+        timestamp: new Date().toISOString()
+      };
 
       // If enabling working hours, check for schedule conflicts
       if (request.workingHoursActive) {
+        logger.info('Validating schedule conflicts for working hours activation', {
+          overrideName: request.overrideName,
+          operation: 'schedule_validation'
+        });
+
         const validationResult = await this.validateWorkingHoursActivation(request.overrideName);
         if (!validationResult.isValid) {
-          const errorMessages = validationResult.errors.map(e => e.message).join(', ');
+          validationErrors = validationResult.errors.map(e => e.message);
+          const errorMessages = validationErrors.join(', ');
+          
+          // Enhanced validation error logging
+          logger.error('Working hours validation failed', { 
+            overrideName: request.overrideName,
+            validationErrors,
+            errorCount: validationErrors.length,
+            operation: 'update_working_hours'
+          });
+          
+          // Pretty log validation errors
+          prettyLogger.workingHoursToggle(
+            request.overrideName,
+            beforeState,
+            request.workingHoursActive,
+            operationContext,
+            validationErrors
+          );
+          
           throw new Error(`Validation failed: ${errorMessages}`);
         }
+      }
+
+      // Get WxCC context for enhanced logging
+      const wxccAgent = await this.getWxccAgentByOverrideName(request.overrideName);
+      if (wxccAgent) {
+        operationContext.wxccContext = {
+          containerId: wxccAgent.containerId,
+          containerName: wxccAgent.containerName,
+          startDateTime: wxccAgent.startDateTime,
+          endDateTime: wxccAgent.endDateTime
+        };
       }
 
       // Update working hours status
@@ -187,13 +255,17 @@ export class MappingService {
       );
 
       if (!updatedMapping) {
-        throw new Error('Failed to update working hours status');
+        const error = 'Failed to update working hours status in database';
+        logger.error('Database update failed for working hours', { 
+          overrideName: request.overrideName,
+          error,
+          operation: 'update_working_hours'
+        });
+        throw new Error(error);
       }
 
-      // Get WxCC context for response
-      const wxccAgent = await this.getWxccAgentByOverrideName(request.overrideName);
-
-      return {
+      // Build response
+      const response = {
         overrideName: updatedMapping.overrideName,
         agentName: updatedMapping.agentName,
         workingHoursActive: updatedMapping.workingHoursActive,
@@ -203,12 +275,55 @@ export class MappingService {
         containerId: wxccAgent?.containerId,
         containerName: wxccAgent?.containerName
       };
+
+      // Success logging - both JSON and pretty logs
+      logger.info('Working hours toggle completed successfully', { 
+        operation: 'update_working_hours',
+        overrideName: request.overrideName,
+        beforeState,
+        afterState: updatedMapping.workingHoursActive,
+        agentName: updatedMapping.agentName,
+        result: response,
+        operationContext
+      });
+
+      // Pretty log successful toggle
+      prettyLogger.workingHoursToggle(
+        request.overrideName,
+        beforeState!,
+        updatedMapping.workingHoursActive,
+        {
+          ...operationContext,
+          success: true,
+          agentName: updatedMapping.agentName
+        }
+      );
+
+      return response;
+      
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      logger.error('Failed to update working hours', { 
-        overrideName: request.overrideName, 
-        error: errorMessage 
+      
+      // Enhanced error logging - both JSON and pretty logs
+      logger.error('Working hours toggle operation failed', { 
+        operation: 'update_working_hours',
+        overrideName: request.overrideName,
+        beforeState,
+        requestedState: request.workingHoursActive,
+        error: errorMessage,
+        operationContext,
+        validationErrors: validationErrors.length > 0 ? validationErrors : undefined
       });
+      
+      prettyLogger.error('Working hours toggle failed', {
+        operation: 'updateWorkingHours',
+        overrideName: request.overrideName,
+        beforeState,
+        requestedState: request.workingHoursActive,
+        error: errorMessage,
+        context: operationContext
+      });
+      
       throw error;
     }
   }
