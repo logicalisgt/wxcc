@@ -116,7 +116,10 @@ export class WxccApiClient {
       
       // Use official WxCC API endpoint for List Overrides resources
       const endpoint = `/organization/${config.wxcc.organizationId}/v2/overrides`;
-      const response: AxiosResponse<{ items: WxccOverrideContainer[] }> = await this.client.get(endpoint);
+      const response: AxiosResponse<{ 
+        data?: WxccOverrideContainer[]; 
+        items?: WxccOverrideContainer[] 
+      }> = await this.client.get(endpoint);
 
       // Debug logging: Log raw API response data for diagnosis
       logger.info('WxCC API raw response received', { 
@@ -126,7 +129,7 @@ export class WxccApiClient {
         headers: response.headers
       });
 
-      const containers = response.data.items || [];
+      const containers = response.data.data || response.data.items || [];
       logger.info('Successfully fetched containers', { 
         operation: 'list_containers',
         count: containers.length 
