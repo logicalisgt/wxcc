@@ -74,11 +74,29 @@ export const logWxccApiError = (operation: string, error: unknown, context?: any
   const errorMessage = error instanceof Error ? error.message : String(error);
   const errorStack = error instanceof Error ? error.stack : undefined;
   
+  // Extract detailed WxCC API error information
+  let wxccErrorDetails = {};
+  if (error && typeof error === 'object' && 'response' in error) {
+    const axiosError = error as any;
+    wxccErrorDetails = {
+      status: axiosError.response?.status,
+      statusText: axiosError.response?.statusText,
+      wxccErrorMessage: axiosError.response?.data?.message || axiosError.response?.data?.error,
+      wxccErrorCode: axiosError.response?.data?.code,
+      wxccErrorDetails: axiosError.response?.data?.details,
+      responseHeaders: axiosError.response?.headers,
+      requestUrl: axiosError.config?.url,
+      requestMethod: axiosError.config?.method?.toUpperCase(),
+      requestBody: axiosError.config?.data
+    };
+  }
+  
   logger.error('WxCC API Error', {
     type: 'wxcc_api_error',
     operation,
     error: errorMessage,
     stack: errorStack,
-    context
+    context,
+    ...wxccErrorDetails
   });
 };
