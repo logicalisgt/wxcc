@@ -9,6 +9,7 @@ import {
   ScheduleValidationError
 } from '../types';
 import { logger } from '../utils/logger';
+import { prettyLogger } from '../utils/prettyLogger';
 
 export class MappingService {
   
@@ -88,8 +89,23 @@ export class MappingService {
         agentName: request.agentName 
       });
 
+      prettyLogger.mappingOperation('CREATE_OR_UPDATE', request.overrideName, {
+        agentName: request.agentName,
+        operation: 'mapping_creation'
+      });
+
       // Validate that the override name exists in WxCC
+      prettyLogger.info('Validating override exists in WxCC', {
+        overrideName: request.overrideName
+      });
+      
       await this.validateOverrideExists(request.overrideName);
+      prettyLogger.success('Override validation passed', {
+        overrideName: request.overrideName
+      });
+
+      // Get current state before update
+      const beforeMapping = await databaseService.getMapping(request.overrideName);
 
       // Create/update the mapping
       const mapping = await databaseService.upsertMapping(request);
@@ -97,7 +113,7 @@ export class MappingService {
       // Get WxCC context for response
       const wxccAgent = await this.getWxccAgentByOverrideName(request.overrideName);
 
-      return {
+      const response = {
         overrideName: mapping.overrideName,
         agentName: mapping.agentName,
         workingHoursActive: mapping.workingHoursActive,
@@ -107,12 +123,34 @@ export class MappingService {
         containerId: wxccAgent?.containerId,
         containerName: wxccAgent?.containerName
       };
+
+      prettyLogger.mappingOperation('CREATE_OR_UPDATE_COMPLETED', request.overrideName, {
+        wasUpdate: beforeMapping !== null,
+        before: beforeMapping,
+        after: response,
+        wxccContext: wxccAgent ? {
+          containerId: wxccAgent.containerId,
+          containerName: wxccAgent.containerName,
+          startDateTime: wxccAgent.startDateTime,
+          endDateTime: wxccAgent.endDateTime
+        } : null
+      });
+
+      return response;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('Failed to create/update mapping', { 
         overrideName: request.overrideName, 
         error: errorMessage 
       });
+      
+      prettyLogger.error('Mapping operation failed', {
+        operation: 'createOrUpdateMapping',
+        overrideName: request.overrideName,
+        agentName: request.agentName,
+        error: errorMessage
+      });
+      
       throw error;
     }
   }

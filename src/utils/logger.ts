@@ -68,6 +68,16 @@ export const logScheduleConflict = (
     conflictingAgentId,
     containerId
   });
+  
+  // Also log with pretty logger for better visibility
+  if (typeof require !== 'undefined') {
+    try {
+      const { prettyLogger } = require('./prettyLogger');
+      prettyLogger.scheduleConflict(agentId, conflictingAgentId, containerId);
+    } catch (error) {
+      // Gracefully handle if prettyLogger is not available
+    }
+  }
 };
 
 export const logWxccApiError = (operation: string, error: unknown, context?: any) => {
