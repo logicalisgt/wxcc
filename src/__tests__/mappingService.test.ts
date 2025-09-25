@@ -73,8 +73,8 @@ describe('MappingService', () => {
       ];
 
       mockOverrideService.getAllContainersWithAgents.mockResolvedValue(mockContainers);
-      mockDatabaseService.getAllMappings.mockReturnValue(mockMappings);
-      mockDatabaseService.cleanupOrphanedMappings.mockReturnValue(0);
+      mockDatabaseService.getAllMappings.mockResolvedValue(mockMappings);
+      mockDatabaseService.cleanupOrphanedMappings.mockResolvedValue(0);
 
       const result = await mappingService.getAllMappings();
 
@@ -98,7 +98,7 @@ describe('MappingService', () => {
 
     it('should handle empty WxCC data', async () => {
       mockOverrideService.getAllContainersWithAgents.mockResolvedValue([]);
-      mockDatabaseService.getAllMappings.mockReturnValue([]);
+      mockDatabaseService.getAllMappings.mockResolvedValue([]);
 
       const result = await mappingService.getAllMappings();
 
@@ -145,7 +145,7 @@ describe('MappingService', () => {
       };
 
       mockOverrideService.getAllContainersWithAgents.mockResolvedValue(mockContainers);
-      mockDatabaseService.upsertMapping.mockReturnValue(mockMapping);
+      mockDatabaseService.upsertMapping.mockResolvedValue(mockMapping);
 
       const result = await mappingService.createOrUpdateMapping(request);
 
@@ -188,8 +188,8 @@ describe('MappingService', () => {
 
       const mockUpdatedMapping = { ...mockMapping, workingHoursActive: false };
 
-      mockDatabaseService.getMapping.mockReturnValue(mockMapping);
-      mockDatabaseService.updateWorkingHours.mockReturnValue(mockUpdatedMapping);
+      mockDatabaseService.getMapping.mockResolvedValue(mockMapping);
+      mockDatabaseService.updateWorkingHours.mockResolvedValue(mockUpdatedMapping);
       mockOverrideService.getAllContainersWithAgents.mockResolvedValue([]);
 
       const result = await mappingService.updateWorkingHours(request);
@@ -205,7 +205,7 @@ describe('MappingService', () => {
         workingHoursActive: true
       };
 
-      mockDatabaseService.getMapping.mockReturnValue(null);
+      mockDatabaseService.getMapping.mockResolvedValue(null);
 
       await expect(mappingService.updateWorkingHours(request))
         .rejects
