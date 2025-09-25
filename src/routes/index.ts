@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { overrideController } from '../controllers/overrideController';
+import { mappingController } from '../controllers/mappingController';
 
 const router = Router();
 
@@ -17,5 +18,10 @@ router.put('/overrides/containers/:containerId/agents/:agentId',
 
 // Active agents endpoint
 router.get('/overrides/active', overrideController.getActiveAgents.bind(overrideController));
+
+// Agent mapping endpoints
+router.get('/overrides/mappings', mappingController.getAllMappings.bind(mappingController));
+router.post('/overrides/map', mappingController.createMapping.bind(mappingController));
+router.patch('/overrides/working-hours', mappingController.updateWorkingHours.bind(mappingController));
 
 export { router as apiRoutes };

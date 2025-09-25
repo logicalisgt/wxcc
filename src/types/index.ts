@@ -92,3 +92,35 @@ export interface WxccApiConfig {
   organizationId: string;
   timeout: number;
 }
+
+// Mapping types for SQLite persistent storage
+export interface AgentMapping {
+  id: number;
+  overrideName: string; // The 'name' from WxCC API override
+  agentName: string; // User-friendly name
+  workingHoursActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MappingRequest {
+  overrideName: string;
+  agentName: string;
+}
+
+export interface WorkingHoursToggleRequest {
+  overrideName: string;
+  workingHoursActive: boolean;
+}
+
+export interface OverrideMappingResponse {
+  overrideName: string;
+  agentName: string | null; // null if unmapped
+  workingHoursActive: boolean;
+  isMapped: boolean;
+  // Include WxCC override data for context
+  startDateTime?: string;
+  endDateTime?: string;
+  containerId?: string;
+  containerName?: string;
+}
