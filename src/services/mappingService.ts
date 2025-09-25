@@ -232,10 +232,6 @@ export class MappingService {
         };
       }
 
-      // Get the container to check for conflicts with existing agents
-      const container = await overrideService.getContainerById(targetAgent.containerId);
-      
-      // Use existing validation logic from overrideService
       // Create a mock update request to leverage existing validation
       const mockUpdateRequest = {
         workingHours: true,
@@ -243,10 +239,10 @@ export class MappingService {
         endDateTime: targetAgent.endDateTime
       };
 
-      // Use private method access pattern similar to existing code
-      const validationResult = await (overrideService as any).validateAgentScheduleUpdate(
-        targetAgent.containerId,
+      // Use the public validation method from overrideService
+      const validationResult = await overrideService.validateScheduleConflictForOverride(
         overrideName,
+        targetAgent.containerId,
         mockUpdateRequest
       );
 

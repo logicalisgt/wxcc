@@ -8,6 +8,9 @@ Backend API service for WebEx Contact Center (WxCC) Overrides integration, provi
 - **Agent Schedule Management**: Update agent schedules with comprehensive validation
 - **Schedule Conflict Prevention**: Ensures no overlapping schedules for active agents (workingHours: true)
 - **Real-time Status Tracking**: Determine currently active agents across all containers
+- **Persistent Agent Mapping**: SQLite-based mapping of WxCC override names to human-friendly agent names
+- **Working Hours Toggle**: Enable/disable working hours with schedule conflict validation
+- **Automatic Cleanup**: Remove orphaned mappings when overrides are deleted from WxCC
 - **Structured Logging**: JSON-formatted logs for all API calls, validations, and errors
 - **Error Handling**: Clear error messages for validation failures and API issues
 - **Type Safety**: Full TypeScript implementation with comprehensive type definitions
@@ -18,10 +21,11 @@ The backend implements a layered architecture:
 
 1. **API Layer** (`src/controllers/`): Express.js controllers handling HTTP requests/responses
 2. **Business Logic Layer** (`src/services/`): Core business logic and validation
-3. **External API Layer** (`src/services/wxccApiClient.ts`): WxCC API integration client
-4. **Middleware Layer** (`src/middleware/`): Request logging, error handling
-5. **Configuration Layer** (`src/config/`): Environment-based configuration management
-6. **Utilities Layer** (`src/utils/`): Logging, validation helpers
+3. **Database Layer** (`src/services/databaseService.ts`): SQLite-based persistent storage for agent mappings
+4. **External API Layer** (`src/services/wxccApiClient.ts`): WxCC API integration client
+5. **Middleware Layer** (`src/middleware/`): Request logging, error handling
+6. **Configuration Layer** (`src/config/`): Environment-based configuration management
+7. **Utilities Layer** (`src/utils/`): Logging, validation helpers
 
 ## API Endpoints
 
@@ -37,6 +41,115 @@ The backend implements a layered architecture:
 
 ### Active Agents
 - **GET** `/api/overrides/active` - Get currently active agents across all containers
+
+### Agent Mapping (New!)
+- **GET** `/api/overrides/mappings` - Get all override mappings with WxCC context
+- **POST** `/api/overrides/map` - Create or update an agent mapping
+- **PATCH** `/api/overrides/working-hours` - Toggle working hours for a mapped override
+
+## Detailed API Documentation
+
+### GET `/api/overrides/mappings`
+Returns all override names from WxCC with their mapping status and working hours configuration.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "overrideName": "Day for me",
+      "agentName": "John Smith",
+      "workingHoursActive": true,
+      "isMapped": true,
+      "startDateTime": "2024-01-01T08:00:00Z",
+      "endDateTime": "2024-01-01T17:00:00Z",
+      "containerId": "container456",
+      "containerName": "Sales Team Override"
+    },
+    {
+      "overrideName": "Fire Drill",
+      "agentName": null,
+      "workingHoursActive": false,
+      "isMapped": false,
+      "startDateTime": "2024-01-01T09:00:00Z",
+      "endDateTime": "2024-01-01T18:00:00Z",
+      "containerId": "container456",
+      "containerName": "Sales Team Override"
+    }
+  ],
+  "count": 2,
+  "mappedCount": 1,
+  "unmappedCount": 1
+}
+```
+
+### POST `/api/overrides/map`
+Create or update a mapping between a WxCC override name and a human-friendly agent name.
+
+**Request Body:**
+```json
+{
+  "overrideName": "Day for me",
+  "agentName": "John Smith"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "overrideName": "Day for me",
+    "agentName": "John Smith", 
+    "workingHoursActive": false,
+    "isMapped": true,
+    "startDateTime": "2024-01-01T08:00:00Z",
+    "endDateTime": "2024-01-01T17:00:00Z",
+    "containerId": "container456",
+    "containerName": "Sales Team Override"
+  },
+  "message": "Successfully mapped 'Day for me' to 'John Smith'"
+}
+```
+
+**Error Cases:**
+- `404`: Override name not found in WxCC
+- `400`: Invalid request data (missing required fields)
+
+### PATCH `/api/overrides/working-hours`
+Toggle working hours for a mapped override with schedule conflict validation.
+
+**Request Body:**
+```json
+{
+  "overrideName": "Day for me",
+  "workingHoursActive": true
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "overrideName": "Day for me",
+    "agentName": "John Smith",
+    "workingHoursActive": true,
+    "isMapped": true,
+    "startDateTime": "2024-01-01T08:00:00Z",
+    "endDateTime": "2024-01-01T17:00:00Z",
+    "containerId": "container456",
+    "containerName": "Sales Team Override"
+  },
+  "message": "Working hours activated for 'Day for me'"
+}
+```
+
+**Error Cases:**
+- `404`: Mapping not found for override name
+- `409`: Schedule conflict with another active agent
+- `400`: Invalid request data
 
 ## Business Logic
 
@@ -55,6 +168,32 @@ The backend implements a layered architecture:
 - `SCHEDULED`: workingHours = true, current time < startDateTime  
 - `ACTIVE`: workingHours = true, current time within [startDateTime, endDateTime]
 - `EXPIRED`: workingHours = true, current time > endDateTime
+
+### Persistent Agent Mapping System
+The system includes a SQLite-based mapping layer that associates WxCC override names (e.g., "Day for me", "Fire Drill") with human-friendly agent names:
+
+#### Database Schema
+```sql
+CREATE TABLE wxcc_agent_mappings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  override_name TEXT UNIQUE NOT NULL,
+  agent_name TEXT NOT NULL,
+  working_hours_active INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+#### Mapping Workflow
+1. **Discovery**: Fetch all overrides from WxCC API
+2. **Mapping**: Associate override names with human-friendly agent names
+3. **Validation**: Enable working hours only after checking for schedule conflicts
+4. **Cleanup**: Remove orphaned mappings when overrides are deleted from WxCC
+
+#### Working Hours Validation
+- Before enabling working hours, the system validates against existing active agents
+- Uses the same schedule conflict detection logic as the original agent management
+- Prevents overlapping schedules to ensure consistent agent coverage
 
 ## Data Models
 
@@ -85,6 +224,36 @@ The backend implements a layered architecture:
 }
 ```
 
+### Override Mapping Response Format (New!)
+```json
+{
+  "overrideName": "Day for me",
+  "agentName": "John Smith",
+  "workingHoursActive": true,
+  "isMapped": true,
+  "startDateTime": "2024-01-01T08:00:00Z",
+  "endDateTime": "2024-01-01T17:00:00Z",
+  "containerId": "container456",
+  "containerName": "Sales Team Override"
+}
+```
+
+### Mapping Request Format
+```json
+{
+  "overrideName": "Fire Drill",
+  "agentName": "Jane Smith"
+}
+```
+
+### Working Hours Toggle Request Format
+```json
+{
+  "overrideName": "Fire Drill",
+  "workingHoursActive": true
+}
+```
+
 ## Installation
 
 1. **Clone Repository**
@@ -108,6 +277,9 @@ cp .env.example .env
 ```bash
 npm run build
 ```
+
+5. **Database Setup**
+The SQLite database is automatically created on first run. The database file `wxcc_mappings.db` will be created in the project root directory. No additional setup is required.
 
 ## Configuration
 
@@ -240,6 +412,7 @@ npm test -- --coverage
 - Rate limiting for API endpoints
 - Caching layer for frequently accessed data
 - WebSocket support for real-time updates
-- Database persistence for audit trails
-- Metrics and monitoring integration
+- Metrics and monitoring integration  
 - API documentation with OpenAPI/Swagger
+- Enhanced audit logging with history tracking
+- Bulk operations for mapping management

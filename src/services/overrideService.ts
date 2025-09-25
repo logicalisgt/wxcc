@@ -374,6 +374,17 @@ export class OverrideService {
       isCurrentlyActive
     };
   }
+
+  /**
+   * Public method for validating schedule conflicts for external use
+   */
+  async validateScheduleConflictForOverride(
+    overrideName: string,
+    containerId: string,
+    updateData: UpdateAgentRequest
+  ): Promise<ValidationResult> {
+    return this.validateAgentScheduleUpdate(containerId, overrideName, updateData);
+  }
 }
 
 export const overrideService = new OverrideService();
