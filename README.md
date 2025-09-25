@@ -465,6 +465,8 @@ The SQLite database is automatically created on first run. The database file `wx
 
 ## Configuration
 
+Environment variables are automatically loaded from `.env` file at application startup using dotenv. This ensures all configuration values are available during initialization.
+
 Required environment variables:
 
 - `WXCC_API_BASE_URL`: WxCC API base URL (default: https://api.wxcc-eu2.cisco.com)
@@ -478,6 +480,10 @@ Optional configurations:
 - `API_RETRY_ATTEMPTS`: Number of retry attempts for failed API calls (default: 3)
 - `API_RETRY_DELAY`: Delay between retries in milliseconds (default: 1000)  
 - `ALLOWED_ORIGINS`: CORS allowed origins (comma-separated)
+- `PRETTY_LOGS`: Enable colorized console output (default: true in development)
+
+### Environment Loading
+The application loads environment variables from `.env` file at the very top of the main entry point (`src/index.ts`) before any other imports or configurations. This ensures that `WXCC_ACCESS_TOKEN` and `WXCC_ORG_ID` are always available during configuration validation.
 
 ## Usage
 

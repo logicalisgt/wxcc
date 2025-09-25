@@ -1,3 +1,8 @@
+// Load environment variables from .env file at the very top
+// This ensures WXCC_ACCESS_TOKEN and WXCC_ORG_ID are available for config validation
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';

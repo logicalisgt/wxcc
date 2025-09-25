@@ -234,6 +234,44 @@ class PrettyLogger {
   }
 
   /**
+   * Log working hours toggle operations with before/after state and validation details
+   */
+  workingHoursToggle(overrideName: string, beforeState: boolean, afterState: boolean, context?: any, validationErrors?: string[]): void {
+    if (!this.isEnabled) return;
+    
+    const toggleIcon = afterState ? '🟢' : '🔴';
+    const toggleText = afterState ? 'ENABLED' : 'DISABLED';
+    const statusColor = afterState ? chalk.green : chalk.red;
+    
+    console.log(
+      toggleIcon + ' ' +
+      chalk.gray(`[${this.timestamp()}]`) + ' ' +
+      statusColor(`Working Hours ${toggleText}`) + ' ' +
+      chalk.white(`"${overrideName}"`)
+    );
+    
+    // Show before/after state
+    console.log(chalk.gray(`   Before: ${beforeState ? 'Active' : 'Inactive'}`));
+    console.log(chalk.gray(`   After:  ${afterState ? 'Active' : 'Inactive'}`));
+    
+    // Show operation context
+    if (context) {
+      console.log(
+        chalk.gray('   Context: ') + 
+        chalk.cyan(JSON.stringify(context, null, 2))
+      );
+    }
+    
+    // Show validation errors if any
+    if (validationErrors && validationErrors.length > 0) {
+      console.log(chalk.red('   Validation Errors:'));
+      validationErrors.forEach(error => {
+        console.log(chalk.red(`     ❌ ${error}`));
+      });
+    }
+  }
+
+  /**
    * Enable/disable pretty logging
    */
   setEnabled(enabled: boolean): void {
