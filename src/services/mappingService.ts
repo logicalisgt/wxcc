@@ -31,7 +31,7 @@ export class MappingService {
       }
 
       // Get all mappings from database
-      const mappings = databaseService.getAllMappings();
+      const mappings = await databaseService.getAllMappings();
       
       // Create mapping lookup for performance
       const mappingLookup = new Map(
@@ -59,7 +59,7 @@ export class MappingService {
       // Clean up orphaned mappings
       const activeOverrideNames = Array.from(wxccOverrides.keys());
       if (activeOverrideNames.length > 0) {
-        const cleanedCount = databaseService.cleanupOrphanedMappings(activeOverrideNames);
+        const cleanedCount = await databaseService.cleanupOrphanedMappings(activeOverrideNames);
         if (cleanedCount > 0) {
           logger.info('Cleaned up orphaned mappings during fetch', { cleanedCount });
         }
@@ -92,7 +92,7 @@ export class MappingService {
       await this.validateOverrideExists(request.overrideName);
 
       // Create/update the mapping
-      const mapping = databaseService.upsertMapping(request);
+      const mapping = await databaseService.upsertMapping(request);
 
       // Get WxCC context for response
       const wxccAgent = await this.getWxccAgentByOverrideName(request.overrideName);
@@ -128,7 +128,7 @@ export class MappingService {
       });
 
       // Check if mapping exists
-      const existingMapping = databaseService.getMapping(request.overrideName);
+      const existingMapping = await databaseService.getMapping(request.overrideName);
       if (!existingMapping) {
         throw new Error(`No mapping found for override name: ${request.overrideName}`);
       }
@@ -143,7 +143,7 @@ export class MappingService {
       }
 
       // Update working hours status
-      const updatedMapping = databaseService.updateWorkingHours(
+      const updatedMapping = await databaseService.updateWorkingHours(
         request.overrideName, 
         request.workingHoursActive
       );

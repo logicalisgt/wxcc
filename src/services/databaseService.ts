@@ -1,55 +1,144 @@
-import Database from 'better-sqlite3';
+import sqlite3 from 'sqlite3';
 import path from 'path';
 import { AgentMapping, MappingRequest } from '../types';
 import { logger } from '../utils/logger';
 
+// Promisify sqlite3 operations for async/await support
+class AsyncDatabase {
+  private db: sqlite3.Database;
+
+  constructor(dbPath: string) {
+    this.db = new sqlite3.Database(dbPath);
+  }
+
+  static create(dbPath: string): Promise<AsyncDatabase> {
+    return new Promise<AsyncDatabase>((resolve, reject) => {
+      const asyncDb = new AsyncDatabase('');
+      asyncDb.db = new sqlite3.Database(dbPath, (err) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(asyncDb);
+        }
+      });
+    });
+  }
+
+  run(sql: string, params: any[] = []): Promise<{ lastID: number; changes: number }> {
+    return new Promise((resolve, reject) => {
+      this.db.run(sql, params, function(this: sqlite3.RunResult, err: Error | null) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve({ lastID: this.lastID, changes: this.changes });
+        }
+      });
+    });
+  }
+
+  get<T = any>(sql: string, params: any[] = []): Promise<T | undefined> {
+    return new Promise((resolve, reject) => {
+      this.db.get<T>(sql, params, (err: Error | null, row: T) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(row);
+        }
+      });
+    });
+  }
+
+  all<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+    return new Promise((resolve, reject) => {
+      this.db.all<T>(sql, params, (err: Error | null, rows: T[]) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows || []);
+        }
+      });
+    });
+  }
+
+  exec(sql: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.db.exec(sql, (err: Error | null) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+
+  close(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.db.close((err: Error | null) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+}
+
 export class DatabaseService {
-  private db: Database.Database;
+  private db!: AsyncDatabase;
+  private initPromise: Promise<void>;
 
   constructor(dbPath?: string) {
     // Use a database file in the project root if not specified
     const databasePath = dbPath || path.join(process.cwd(), 'wxcc_mappings.db');
     
-    this.db = new Database(databasePath);
-    this.initializeDatabase();
+    // Initialize the database asynchronously
+    this.initPromise = this.initializeDatabase(databasePath);
     
     logger.info('Database service initialized', { databasePath });
   }
 
-  private initializeDatabase(): void {
-    // Create the mappings table if it doesn't exist
-    const createTableSQL = `
-      CREATE TABLE IF NOT EXISTS wxcc_agent_mappings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        override_name TEXT UNIQUE NOT NULL,
-        agent_name TEXT NOT NULL,
-        working_hours_active INTEGER NOT NULL DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `;
+  private async ensureInitialized(): Promise<void> {
+    await this.initPromise;
+  }
 
-    // Create index for faster lookups
-    const createIndexSQL = `
-      CREATE INDEX IF NOT EXISTS idx_override_name 
-      ON wxcc_agent_mappings(override_name)
-    `;
-
-    // Create trigger to update updated_at timestamp
-    const createTriggerSQL = `
-      CREATE TRIGGER IF NOT EXISTS update_timestamp
-      AFTER UPDATE ON wxcc_agent_mappings
-      BEGIN
-        UPDATE wxcc_agent_mappings 
-        SET updated_at = CURRENT_TIMESTAMP 
-        WHERE id = NEW.id;
-      END
-    `;
-
+  private async initializeDatabase(databasePath: string): Promise<void> {
     try {
-      this.db.exec(createTableSQL);
-      this.db.exec(createIndexSQL);
-      this.db.exec(createTriggerSQL);
+      this.db = await AsyncDatabase.create(databasePath);
+      
+      // Create the mappings table if it doesn't exist
+      const createTableSQL = `
+        CREATE TABLE IF NOT EXISTS wxcc_agent_mappings (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          override_name TEXT UNIQUE NOT NULL,
+          agent_name TEXT NOT NULL,
+          working_hours_active INTEGER NOT NULL DEFAULT 0,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+
+      // Create index for faster lookups
+      const createIndexSQL = `
+        CREATE INDEX IF NOT EXISTS idx_override_name 
+        ON wxcc_agent_mappings(override_name)
+      `;
+
+      // Create trigger to update updated_at timestamp
+      const createTriggerSQL = `
+        CREATE TRIGGER IF NOT EXISTS update_timestamp
+        AFTER UPDATE ON wxcc_agent_mappings
+        BEGIN
+          UPDATE wxcc_agent_mappings 
+          SET updated_at = CURRENT_TIMESTAMP 
+          WHERE id = NEW.id;
+        END
+      `;
+
+      await this.db.exec(createTableSQL);
+      await this.db.exec(createIndexSQL);
+      await this.db.exec(createTriggerSQL);
       
       logger.info('Database schema initialized successfully');
     } catch (error) {
@@ -62,17 +151,18 @@ export class DatabaseService {
   /**
    * Get mapping for a specific override name
    */
-  getMapping(overrideName: string): AgentMapping | null {
+  async getMapping(overrideName: string): Promise<AgentMapping | null> {
+    await this.ensureInitialized();
     try {
-      const query = this.db.prepare(`
+      const sql = `
         SELECT id, override_name as overrideName, agent_name as agentName, 
                working_hours_active as workingHoursActive, 
                created_at as createdAt, updated_at as updatedAt
         FROM wxcc_agent_mappings 
         WHERE override_name = ?
-      `);
+      `;
       
-      const result = query.get(overrideName) as any;
+      const result = await this.db.get<any>(sql, [overrideName]);
       if (!result) return null;
 
       // Convert SQLite integer to boolean
@@ -90,17 +180,18 @@ export class DatabaseService {
   /**
    * Get all mappings
    */
-  getAllMappings(): AgentMapping[] {
+  async getAllMappings(): Promise<AgentMapping[]> {
+    await this.ensureInitialized();
     try {
-      const query = this.db.prepare(`
+      const sql = `
         SELECT id, override_name as overrideName, agent_name as agentName, 
                working_hours_active as workingHoursActive,
                created_at as createdAt, updated_at as updatedAt
         FROM wxcc_agent_mappings 
         ORDER BY override_name
-      `);
+      `;
       
-      const results = query.all() as any[];
+      const results = await this.db.all<any>(sql);
       
       // Convert SQLite integers to booleans
       return results.map(result => ({
@@ -117,21 +208,22 @@ export class DatabaseService {
   /**
    * Create or update a mapping
    */
-  upsertMapping(request: MappingRequest): AgentMapping {
+  async upsertMapping(request: MappingRequest): Promise<AgentMapping> {
+    await this.ensureInitialized();
     try {
-      const upsertQuery = this.db.prepare(`
+      const sql = `
         INSERT INTO wxcc_agent_mappings (override_name, agent_name, working_hours_active)
         VALUES (?, ?, 0)
         ON CONFLICT(override_name) 
         DO UPDATE SET 
           agent_name = excluded.agent_name,
           updated_at = CURRENT_TIMESTAMP
-      `);
+      `;
 
-      upsertQuery.run(request.overrideName, request.agentName);
+      await this.db.run(sql, [request.overrideName, request.agentName]);
 
       // Return the updated/created mapping
-      const mapping = this.getMapping(request.overrideName);
+      const mapping = await this.getMapping(request.overrideName);
       if (!mapping) {
         throw new Error('Failed to create/update mapping');
       }
@@ -155,22 +247,23 @@ export class DatabaseService {
   /**
    * Update working hours status for a mapping
    */
-  updateWorkingHours(overrideName: string, workingHoursActive: boolean): AgentMapping | null {
+  async updateWorkingHours(overrideName: string, workingHoursActive: boolean): Promise<AgentMapping | null> {
+    await this.ensureInitialized();
     try {
-      const updateQuery = this.db.prepare(`
+      const sql = `
         UPDATE wxcc_agent_mappings 
         SET working_hours_active = ?, updated_at = CURRENT_TIMESTAMP
         WHERE override_name = ?
-      `);
+      `;
 
-      const result = updateQuery.run(workingHoursActive ? 1 : 0, overrideName);
+      const result = await this.db.run(sql, [workingHoursActive ? 1 : 0, overrideName]);
       
       if (result.changes === 0) {
         logger.warn('No mapping found to update working hours', { overrideName });
         return null;
       }
 
-      const updatedMapping = this.getMapping(overrideName);
+      const updatedMapping = await this.getMapping(overrideName);
       
       logger.info('Working hours updated successfully', { 
         overrideName, 
@@ -192,7 +285,8 @@ export class DatabaseService {
   /**
    * Remove mappings that are no longer present in WxCC
    */
-  cleanupOrphanedMappings(activeOverrideNames: string[]): number {
+  async cleanupOrphanedMappings(activeOverrideNames: string[]): Promise<number> {
+    await this.ensureInitialized();
     try {
       if (activeOverrideNames.length === 0) {
         logger.warn('No active override names provided for cleanup');
@@ -200,12 +294,12 @@ export class DatabaseService {
       }
 
       const placeholders = activeOverrideNames.map(() => '?').join(',');
-      const deleteQuery = this.db.prepare(`
+      const sql = `
         DELETE FROM wxcc_agent_mappings 
         WHERE override_name NOT IN (${placeholders})
-      `);
+      `;
 
-      const result = deleteQuery.run(...activeOverrideNames);
+      const result = await this.db.run(sql, activeOverrideNames);
       
       if (result.changes > 0) {
         logger.info('Cleaned up orphaned mappings', { 
@@ -225,18 +319,19 @@ export class DatabaseService {
   /**
    * Get mappings with active working hours for conflict detection
    */
-  getActiveWorkingHoursMappings(): AgentMapping[] {
+  async getActiveWorkingHoursMappings(): Promise<AgentMapping[]> {
+    await this.ensureInitialized();
     try {
-      const query = this.db.prepare(`
+      const sql = `
         SELECT id, override_name as overrideName, agent_name as agentName, 
                working_hours_active as workingHoursActive,
                created_at as createdAt, updated_at as updatedAt
         FROM wxcc_agent_mappings 
         WHERE working_hours_active = 1
         ORDER BY override_name
-      `);
+      `;
       
-      const results = query.all() as any[];
+      const results = await this.db.all<any>(sql);
       
       // Convert SQLite integers to booleans
       return results.map(result => ({
@@ -253,9 +348,10 @@ export class DatabaseService {
   /**
    * Close the database connection
    */
-  close(): void {
+  async close(): Promise<void> {
+    await this.ensureInitialized();
     try {
-      this.db.close();
+      await this.db.close();
       logger.info('Database connection closed');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';

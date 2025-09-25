@@ -71,15 +71,15 @@ const server = app.listen(config.port, () => {
 });
 
 // Graceful shutdown handling
-const gracefulShutdown = (signal: string) => {
+const gracefulShutdown = async (signal: string) => {
   logger.info(`Received ${signal}, starting graceful shutdown`);
   
-  server.close(() => {
+  server.close(async () => {
     logger.info('HTTP server closed');
     
     // Close database connection
     try {
-      databaseService.close();
+      await databaseService.close();
     } catch (error) {
       logger.error('Error closing database during shutdown', { error });
     }
