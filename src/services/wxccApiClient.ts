@@ -2,6 +2,8 @@ import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import { WxccOverrideContainer, WxccOverride } from '../types';
 import { config } from '../config';
 import { logger, logApiCall, logWxccApiError } from '../utils/logger';
+import { prettyLogger } from '../utils/prettyLogger';
+import { toWxccFormat } from '../utils/dateFormat';
 
 export class WxccApiClient {
   private client: AxiosInstance;
@@ -61,6 +63,17 @@ export class WxccApiClient {
           timestamp: new Date().toISOString()
         });
         
+        // Pretty logging for development
+        prettyLogger.apiCall({
+          operation: this.getOperationNameFromUrl(response.config.url || ''),
+          method,
+          url: fullUrl,
+          requestBody: response.config.data,
+          responseBody: response.data,
+          duration,
+          status: response.status
+        });
+        
         // Also maintain backward compatibility with existing logApiCall
         logApiCall(method, fullUrl, duration, response.status);
         
@@ -88,6 +101,16 @@ export class WxccApiClient {
           responseBody: error.response?.data,
           responseHeaders: error.response?.headers,
           timestamp: new Date().toISOString()
+        });
+        
+        // Pretty error logging
+        prettyLogger.error('WxCC API call failed', {
+          operation: this.getOperationNameFromUrl(error.config?.url || ''),
+          method,
+          url: fullUrl,
+          status: error.response?.status,
+          error: error.message,
+          duration
         });
         
         // Also maintain backward compatibility
@@ -227,12 +250,42 @@ export class WxccApiClient {
       }
 
       // Step 3: Update only the relevant override, preserving all other overrides
+      // Ensure date formats are in WxCC format before updating
       const updatedOverride: WxccOverride = {
         ...fullContainer.overrides[overrideIndex],
         ...overrideData
       };
       
+      // Convert dates to WxCC format if they exist
+      if (updatedOverride.startDateTime) {
+        updatedOverride.startDateTime = toWxccFormat(updatedOverride.startDateTime);
+      }
+      if (updatedOverride.endDateTime) {
+        updatedOverride.endDateTime = toWxccFormat(updatedOverride.endDateTime);
+      }
+      
       fullContainer.overrides[overrideIndex] = updatedOverride;
+
+      logger.info('Updated override with WxCC formatted dates', {
+        operation: 'update_override_step3',
+        agentId,
+        originalStartDateTime: overrideData.startDateTime,
+        originalEndDateTime: overrideData.endDateTime,
+        wxccStartDateTime: updatedOverride.startDateTime,
+        wxccEndDateTime: updatedOverride.endDateTime
+      });
+
+      prettyLogger.info('Date format conversion completed', {
+        agentId,
+        originalDates: {
+          start: overrideData.startDateTime,
+          end: overrideData.endDateTime
+        },
+        wxccDates: {
+          start: updatedOverride.startDateTime,
+          end: updatedOverride.endDateTime
+        }
+      });
 
       // Step 4: Construct the complete override container object with all required fields
       const completeContainerPayload: WxccOverrideContainer = {
@@ -243,7 +296,7 @@ export class WxccApiClient {
         description: fullContainer.description,
         timezone: fullContainer.timezone || 'UTC',
         createdTime: fullContainer.createdTime,
-        lastModifiedTime: new Date().toISOString(),
+        lastModifiedTime: toWxccFormat(new Date()),
         overrides: fullContainer.overrides
       };
 

@@ -12,6 +12,8 @@ import {
 } from '../types';
 import { wxccApiClient } from './wxccApiClient';
 import { logger, logValidationError, logScheduleConflict } from '../utils/logger';
+import { prettyLogger } from '../utils/prettyLogger';
+import { toWxccFormat, convertObjectDatesToWxcc } from '../utils/dateFormat';
 
 export class OverrideService {
   
@@ -110,20 +112,62 @@ export class OverrideService {
         updateData
       });
 
-      // Validate the schedule update
+      prettyLogger.info('Starting agent schedule update', {
+        operation: 'update_agent_schedule',
+        containerId,
+        agentId,
+        workingHours: updateData.workingHours
+      });
+
+      // Log the original date formats received
+      prettyLogger.info('Original date formats received', {
+        startDateTime: updateData.startDateTime,
+        endDateTime: updateData.endDateTime,
+        startFormat: typeof updateData.startDateTime,
+        endFormat: typeof updateData.endDateTime
+      });
+
+      // Convert dates to WxCC format before validation and API calls
+      const wxccFormattedData = convertObjectDatesToWxcc(updateData, ['startDateTime', 'endDateTime']);
+      
+      prettyLogger.success('Converted dates to WxCC format', {
+        original_start: updateData.startDateTime,
+        original_end: updateData.endDateTime,
+        wxcc_start: wxccFormattedData.startDateTime,
+        wxcc_end: wxccFormattedData.endDateTime
+      });
+
+      // Validate the schedule update (using original data for validation logic)
       const validationResult = await this.validateAgentScheduleUpdate(containerId, agentId, updateData);
       
       if (!validationResult.isValid) {
         logValidationError('update_agent_schedule', validationResult.errors);
+        prettyLogger.error('Schedule validation failed', {
+          agentId,
+          containerId,
+          errors: validationResult.errors
+        });
         throw new Error(`Validation failed: ${validationResult.errors.map(e => e.message).join(', ')}`);
       }
 
-      // Update via WxCC API
+      prettyLogger.success('Schedule validation passed', { agentId, containerId });
+
+      // Update via WxCC API using formatted dates
       const updatedOverride = await wxccApiClient.updateOverride(containerId, agentId, {
         name: agentId,
-        workingHours: updateData.workingHours,
-        startDateTime: updateData.startDateTime,
-        endDateTime: updateData.endDateTime
+        workingHours: wxccFormattedData.workingHours,
+        startDateTime: wxccFormattedData.startDateTime,
+        endDateTime: wxccFormattedData.endDateTime
+      });
+
+      prettyLogger.success('WxCC API update successful', {
+        agentId,
+        containerId,
+        updatedData: {
+          workingHours: updatedOverride.workingHours,
+          startDateTime: updatedOverride.startDateTime,
+          endDateTime: updatedOverride.endDateTime
+        }
       });
 
       // Fetch container details to get container name
@@ -145,6 +189,16 @@ export class OverrideService {
         status: updatedAgent.status
       });
 
+      prettyLogger.success('Agent schedule update completed', {
+        agentId: updatedAgent.agentId,
+        containerId: updatedAgent.containerId,
+        containerName: updatedAgent.containerName,
+        status: updatedAgent.status,
+        finalStartTime: updatedAgent.startDateTime,
+        finalEndTime: updatedAgent.endDateTime,
+        workingHours: updatedAgent.workingHours
+      });
+
       return updatedAgent;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -153,6 +207,14 @@ export class OverrideService {
         agentId,
         error: errorMessage
       });
+      
+      prettyLogger.error('Agent schedule update failed', {
+        containerId,
+        agentId,
+        error: errorMessage,
+        originalData: updateData
+      });
+      
       throw error;
     }
   }

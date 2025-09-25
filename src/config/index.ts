@@ -15,7 +15,8 @@ export const config = {
   // Logging configuration
   logging: {
     level: process.env.LOG_LEVEL || 'info',
-    format: process.env.LOG_FORMAT || 'json'
+    format: process.env.LOG_FORMAT || 'json',
+    prettyLogs: process.env.PRETTY_LOGS === 'true' || process.env.NODE_ENV === 'development'
   },
 
   // API rate limiting and retry configuration

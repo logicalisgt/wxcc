@@ -2,6 +2,7 @@ import sqlite3 from 'sqlite3';
 import path from 'path';
 import { AgentMapping, MappingRequest } from '../types';
 import { logger } from '../utils/logger';
+import { prettyLogger } from '../utils/prettyLogger';
 
 // Promisify sqlite3 operations for async/await support
 class AsyncDatabase {
@@ -162,17 +163,41 @@ export class DatabaseService {
         WHERE override_name = ?
       `;
       
+      prettyLogger.dbOperation({
+        operation: 'SELECT',
+        table: 'wxcc_agent_mappings',
+        query: sql,
+        params: [overrideName]
+      });
+      
       const result = await this.db.get<any>(sql, [overrideName]);
-      if (!result) return null;
+      
+      if (!result) {
+        prettyLogger.info('No mapping found', { overrideName });
+        return null;
+      }
 
       // Convert SQLite integer to boolean
-      return {
+      const mapping = {
         ...result,
         workingHoursActive: Boolean(result.workingHoursActive)
       } as AgentMapping;
+      
+      prettyLogger.dbOperation({
+        operation: 'SELECT',
+        table: 'wxcc_agent_mappings',
+        after: mapping
+      });
+      
+      return mapping;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('Failed to get mapping', { overrideName, error: errorMessage });
+      prettyLogger.error('Database read failed', { 
+        operation: 'getMapping',
+        overrideName, 
+        error: errorMessage 
+      });
       throw error;
     }
   }
@@ -191,16 +216,34 @@ export class DatabaseService {
         ORDER BY override_name
       `;
       
+      prettyLogger.dbOperation({
+        operation: 'SELECT ALL',
+        table: 'wxcc_agent_mappings',
+        query: sql
+      });
+      
       const results = await this.db.all<any>(sql);
       
       // Convert SQLite integers to booleans
-      return results.map(result => ({
+      const mappings = results.map(result => ({
         ...result,
         workingHoursActive: Boolean(result.workingHoursActive)
       })) as AgentMapping[];
+      
+      prettyLogger.dbOperation({
+        operation: 'SELECT ALL',
+        table: 'wxcc_agent_mappings',
+        after: { count: mappings.length, mappings }
+      });
+      
+      return mappings;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logger.error('Failed to get all mappings', { error: errorMessage });
+      prettyLogger.error('Database read all failed', { 
+        operation: 'getAllMappings',
+        error: errorMessage 
+      });
       throw error;
     }
   }
@@ -211,6 +254,9 @@ export class DatabaseService {
   async upsertMapping(request: MappingRequest): Promise<AgentMapping> {
     await this.ensureInitialized();
     try {
+      // Get current mapping for before state
+      const beforeMapping = await this.getMapping(request.overrideName);
+      
       const sql = `
         INSERT INTO wxcc_agent_mappings (override_name, agent_name, working_hours_active)
         VALUES (?, ?, 0)
@@ -219,6 +265,14 @@ export class DatabaseService {
           agent_name = excluded.agent_name,
           updated_at = CURRENT_TIMESTAMP
       `;
+
+      prettyLogger.dbOperation({
+        operation: 'UPSERT',
+        table: 'wxcc_agent_mappings',
+        before: beforeMapping,
+        query: sql,
+        params: [request.overrideName, request.agentName]
+      });
 
       await this.db.run(sql, [request.overrideName, request.agentName]);
 
@@ -233,6 +287,19 @@ export class DatabaseService {
         agentName: request.agentName 
       });
 
+      prettyLogger.dbOperation({
+        operation: 'UPSERT',
+        table: 'wxcc_agent_mappings',
+        before: beforeMapping,
+        after: mapping
+      });
+
+      prettyLogger.success('Mapping operation completed', {
+        overrideName: request.overrideName,
+        agentName: request.agentName,
+        wasUpdate: beforeMapping !== null
+      });
+
       return mapping;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -240,6 +307,14 @@ export class DatabaseService {
         overrideName: request.overrideName, 
         error: errorMessage 
       });
+      
+      prettyLogger.error('Database upsert failed', {
+        operation: 'upsertMapping',
+        overrideName: request.overrideName,
+        agentName: request.agentName,
+        error: errorMessage
+      });
+      
       throw error;
     }
   }
@@ -250,16 +325,31 @@ export class DatabaseService {
   async updateWorkingHours(overrideName: string, workingHoursActive: boolean): Promise<AgentMapping | null> {
     await this.ensureInitialized();
     try {
+      // Get current mapping for before state
+      const beforeMapping = await this.getMapping(overrideName);
+      
       const sql = `
         UPDATE wxcc_agent_mappings 
         SET working_hours_active = ?, updated_at = CURRENT_TIMESTAMP
         WHERE override_name = ?
       `;
 
+      prettyLogger.dbOperation({
+        operation: 'UPDATE',
+        table: 'wxcc_agent_mappings',
+        before: beforeMapping,
+        query: sql,
+        params: [workingHoursActive ? 1 : 0, overrideName]
+      });
+
       const result = await this.db.run(sql, [workingHoursActive ? 1 : 0, overrideName]);
       
       if (result.changes === 0) {
         logger.warn('No mapping found to update working hours', { overrideName });
+        prettyLogger.warning('No mapping found for working hours update', { 
+          overrideName,
+          workingHoursActive 
+        });
         return null;
       }
 
@@ -270,6 +360,19 @@ export class DatabaseService {
         workingHoursActive 
       });
 
+      prettyLogger.dbOperation({
+        operation: 'UPDATE',
+        table: 'wxcc_agent_mappings',
+        before: beforeMapping,
+        after: updatedMapping
+      });
+
+      prettyLogger.success('Working hours updated', {
+        overrideName,
+        before: beforeMapping?.workingHoursActive,
+        after: workingHoursActive
+      });
+
       return updatedMapping;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -278,6 +381,14 @@ export class DatabaseService {
         workingHoursActive, 
         error: errorMessage 
       });
+      
+      prettyLogger.error('Working hours update failed', {
+        operation: 'updateWorkingHours',
+        overrideName,
+        workingHoursActive,
+        error: errorMessage
+      });
+      
       throw error;
     }
   }
