@@ -6,6 +6,7 @@ import { config, validateConfig } from './config';
 import { logger } from './utils/logger';
 import { apiRoutes } from './routes';
 import { requestLogger, errorHandler, notFoundHandler } from './middleware';
+import { databaseService } from './services/databaseService';
 
 // Validate configuration on startup
 try {
@@ -76,8 +77,12 @@ const gracefulShutdown = (signal: string) => {
   server.close(() => {
     logger.info('HTTP server closed');
     
-    // Close any other connections (database, etc.)
-    // Add cleanup logic here if needed
+    // Close database connection
+    try {
+      databaseService.close();
+    } catch (error) {
+      logger.error('Error closing database during shutdown', { error });
+    }
     
     logger.info('Graceful shutdown completed');
     process.exit(0);
