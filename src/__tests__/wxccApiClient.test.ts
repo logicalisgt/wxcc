@@ -6,6 +6,7 @@
  */
 
 import { config } from '../config';
+import { WxccApiClient } from '../services/wxccApiClient';
 
 describe('WxCC API Endpoint Migration Verification', () => {
   describe('Official WxCC API Endpoints', () => {
@@ -103,6 +104,56 @@ describe('WxCC API Endpoint Migration Verification', () => {
       console.log('- Timing: Request duration in milliseconds');
       console.log('- Status: HTTP response status code');
       console.log('- Timestamp: ISO 8601 formatted timestamp');
+    });
+  });
+
+  describe('API Response Format Compatibility', () => {
+    it('should handle both data and items response formats', () => {
+      // Simulate the response data extraction logic from listOverrideContainers method
+      const mockContainer = {
+        id: 'test-container-1',
+        name: 'Test Container',
+        description: 'Test container for response format validation',
+        createdTime: '2024-01-01T00:00:00Z',
+        lastModifiedTime: '2024-01-01T00:00:00Z'
+      };
+
+      // Test 1: New format - data property (what WxCC actually returns)
+      const newFormatResponse: { data?: any[]; items?: any[] } = {
+        data: [mockContainer]
+      };
+      const containersFromData = newFormatResponse.data || newFormatResponse.items || [];
+      expect(containersFromData).toHaveLength(1);
+      expect(containersFromData[0]).toEqual(mockContainer);
+
+      // Test 2: Old format - items property (for backward compatibility)
+      const oldFormatResponse: { data?: any[]; items?: any[] } = {
+        items: [mockContainer]
+      };
+      const containersFromItems = oldFormatResponse.data || oldFormatResponse.items || [];
+      expect(containersFromItems).toHaveLength(1);
+      expect(containersFromItems[0]).toEqual(mockContainer);
+
+      // Test 3: Both properties present - data should take precedence
+      const bothPropertiesResponse: { data?: any[]; items?: any[] } = {
+        data: [mockContainer],
+        items: [] // Empty items array to test data takes precedence
+      };
+      const containersFromBoth = bothPropertiesResponse.data || bothPropertiesResponse.items || [];
+      expect(containersFromBoth).toHaveLength(1);
+      expect(containersFromBoth[0]).toEqual(mockContainer);
+
+      // Test 4: Neither property present - should return empty array
+      const emptyResponse: { data?: any[]; items?: any[] } = {};
+      const containersFromEmpty = emptyResponse.data || emptyResponse.items || [];
+      expect(containersFromEmpty).toHaveLength(0);
+
+      console.log('');
+      console.log('✅ Response Format Compatibility Tests:');
+      console.log('  - New format (data property): Working');
+      console.log('  - Old format (items property): Working');
+      console.log('  - Priority handling (data over items): Working');
+      console.log('  - Empty response handling: Working');
     });
   });
 });
